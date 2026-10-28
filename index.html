@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NBA 30-Team Depth Chart Wallboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  
+  body {
+    background: #070a12;
+    color: #f1f5f9;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 8px 6px;
+    gap: 6px;
+    user-select: none;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 22px;
+    padding: 0 2px;
+    flex-shrink: 0;
+    z-index: 20;
+  }
+
+  .title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #f8fafc;
+  }
+
+  .legend {
+    font-size: 10px;
+    color: #94a3b8;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sync-status {
+    font-size: 10px;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #10b981;
+    display: inline-block;
+  }
+
+  .btn-refresh {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-refresh:hover { border-color: #f97316; color: #fff; }
+
+  input {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    width: 210px;
+    outline: none;
+  }
+  input:focus { border-color: #f97316; }
+
+  #backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 8, 15, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  #backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .board {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  .conf-box {
+    position: relative;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    padding: 8px 5px 5px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .conf-box.west {
+    border-color: rgba(249, 115, 22, 0.28);
+    background: rgba(249, 115, 22, 0.015);
+  }
+
+  .conf-box.east {
+    border-color: rgba(56, 189, 248, 0.28);
+    background: rgba(56, 189, 248, 0.015);
+  }
+
+  .conf-label {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #070a12;
+    padding: 0 8px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .conf-box.west .conf-label { color: rgba(251, 146, 60, 0.85); }
+  .conf-box.east .conf-label { color: rgba(56, 189, 248, 0.85); }
+
+  .conf-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 5px;
+    min-height: 0;
+  }
+
+  .card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease, opacity 0.15s ease;
+  }
+
+  .card:hover:not(.active) {
+    border-color: #475569;
+    background: #141d2f;
+  }
+
+  .card.dimmed {
+    opacity: 0.18;
+  }
+
+  .card.active {
+    opacity: 1 !important;
+    z-index: 100;
+    transform: scale(2);
+    background: #0f172a;
+    border-color: #f97316 !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(249, 115, 22, 0.7);
+  }
+
+  .card .label-5 { display: none; }
+  .card.active .label-3 { display: none; }
+  .card.active .label-5 { display: inline; }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px;
+    background: #162033;
+    border-bottom: 1px solid #1e293b;
+    flex-shrink: 0;
+    height: 19px;
+  }
+
+  .card-header img {
+    width: 13px;
+    height: 13px;
+    object-fit: contain;
+  }
+
+  .team-name {
+    font-size: 10px;
+    font-weight: 700;
+    color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .col-labels {
+    margin-left: auto;
+    font-size: 7.5px;
+    color: #64748b;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .roster {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    padding: 1px 5px;
+    min-height: 0;
+  }
+
+  .pos-row {
+    display: grid;
+    grid-template-columns: 15px repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 3px;
+    border-bottom: 1px solid rgba(30, 41, 59, 0.45);
+    padding: 1px 0;
+  }
+  .pos-row:last-child { border-bottom: none; }
+
+  .card.active .pos-row {
+    grid-template-columns: 14px repeat(5, minmax(0, 1fr));
+    gap: 2px;
+  }
+
+  .slot-deep { display: none !important; }
+  .card.active .slot-deep { display: flex !important; }
+
+  .pos {
+    font-size: 9px;
+    font-weight: 800;
+    color: #f97316;
+  }
+
+  .slot {
+    display: flex;
+    align-items: baseline;
+    gap: 1.5px;
+    overflow: hidden;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .s-num {
+    font-size: 7px;
+    font-weight: 700;
+    color: #64748b;
+    flex-shrink: 0;
+  }
+
+  .p-name {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: #f1f5f9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .card.active .p-name { font-size: 7.8px; }
+  .card.active .s-num { font-size: 6px; }
+
+  .inj {
+    font-size: 6.5px;
+    font-weight: 800;
+    padding: 0 1.5px;
+    border-radius: 1.5px;
+    flex-shrink: 0;
+    line-height: 1;
+    position: relative;
+    top: -1px;
+  }
+
+  .inj-O { color: #f87171; background: rgba(153, 27, 27, 0.45); }
+  .inj-DTD, .inj-Q { color: #fbbf24; background: rgba(120, 53, 15, 0.45); }
+  .inj-D { color: #fb923c; background: rgba(124, 45, 18, 0.45); }
+
+  .card.active .inj { font-size: 5.5px; padding: 0 1px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="title-group">
+      <h1>🏀 NBA DEPTH CHARTS — FULL LEAGUE WALLBOARD</h1>
+      <div class="legend">
+        <span>Click any team to <strong>2× Zoom (1st–5th String)</strong></span>
+        <span>•</span>
+        <span class="legend-item"><span class="inj inj-O" style="top:0">O</span> Out</span>
+        <span class="legend-item"><span class="inj inj-D" style="top:0">D</span> Doubtful</span>
+        <span class="legend-item"><span class="inj inj-Q" style="top:0">Q</span> / <span class="inj inj-DTD" style="top:0">DTD</span> Day-to-Day</span>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="sync-status">
+        <span class="pulse" id="pulse-dot"></span>
+        <span id="last-updated">Connecting...</span>
+      </div>
+      <button class="btn-refresh" onclick="fetchLiveDepth(true)">↻ Sync</button>
+      <input type="text" id="search" placeholder="Search team, player, 'OUT', or 'DTD'..." oninput="filterCards()">
+    </div>
+  </header>
+
+  <div id="backdrop" onclick="closeActiveCard()"></div>
+
+  <div class="board">
+    <div class="conf-box west" id="box-west">
+      <span class="conf-label">Western Conference</span>
+      <div class="conf-grid" id="grid-west"></div>
+    </div>
+    <div class="conf-box east" id="box-east">
+      <span class="conf-label">Eastern Conference</span>
+      <div class="conf-grid" id="grid-east"></div>
+    </div>
+  </div>
+
+  <script>
+    // PASTE YOUR CLOUDFLARE WORKER URL HERE:
+    const WORKER_URL = "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev";
+
+    let LEAGUE_DATA = [];
+    let activeCardId = null;
+    let activeConf = null;
+
+    function getTransformOrigin(conf, localIdx) {
+      const localCol = localIdx % 3;
+      const globalCol = conf === 'WEST' ? localCol : localCol + 3;
+      const row = Math.floor(localIdx / 3);
+      
+      let x = 'center';
+      if (globalCol === 0) x = 'left';
+      else if (globalCol === 5) x = 'right';
+
+      let y = 'center';
+      if (row === 0) y = 'top';
+      else if (row === 4) y = 'bottom';
+
+      return `${x} ${y}`;
+    }
+
+    function toggleCard(cardId, conf, event) {
+      event.stopPropagation();
+      const backdrop = document.getElementById('backdrop');
+
+      if (activeCardId === cardId) {
+        closeActiveCard();
+        return;
+      }
+
+      if (activeCardId !== null) {
+        const prev = document.getElementById(activeCardId);
+        if (prev) prev.classList.remove('active');
+      }
+
+      activeCardId = cardId;
+      activeConf = conf;
+      document.getElementById(cardId).classList.add('active');
+      
+      document.getElementById('box-west').style.zIndex = conf === 'WEST' ? '60' : '1';
+      document.getElementById('box-east').style.zIndex = conf === 'EAST' ? '60' : '1';
+      
+      backdrop.classList.add('visible');
+    }
+
+    function closeActiveCard() {
+      if (activeCardId !== null) {
+        const card = document.getElementById(activeCardId);
+        if (card) card.classList.remove('active');
+        activeCardId = null;
+        activeConf = null;
+      }
+      document.getElementById('box-west').style.zIndex = '';
+      document.getElementById('box-east').style.zIndex = '';
+      document.getElementById('backdrop').classList.remove('visible');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeActiveCard();
+    });
+
+    function buildCardHTML(t, localIdx) {
+      const cardId = `card-${t.abbr}`;
+      const origin = getTransformOrigin(t.conf, localIdx);
+      const isActive = activeCardId === cardId ? 'active' : '';
+      return `
+        <div class="card ${isActive}" id="${cardId}" 
+             onclick="toggleCard('${cardId}', '${t.conf}', event)"
+             style="border-top: 2px solid ${t.color}; transform-origin: ${origin};">
+          <div class="card-header">
+            <img src="${t.logo}" alt="${t.abbr}">
+            <span class="team-name">${t.team}</span>
+            <span class="col-labels">
+              <span class="label-3">1ST / 2ND / 3RD</span>
+              <span class="label-5">1ST / 2ND / 3RD / 4TH / 5TH</span>
+            </span>
+          </div>
+          <div class="roster">
+            ${['PG', 'SG', 'SF', 'PF', 'C'].map(pos => {
+              const players = t.depth[pos] || [];
+              return `
+                <div class="pos-row">
+                  <span class="pos">${pos}</span>
+                  ${[0, 1, 2, 3, 4].map(slotIdx => {
+                    const p = players[slotIdx] || {shortName: '-', fullName: '-', injury: '', injuryDetail: ''};
+                    const deepClass = slotIdx >= 3 ? 'slot-deep' : '';
+                    const hasPlayer = p.shortName && p.shortName !== '-';
+                    const tooltip = p.injuryDetail 
+                      ? `${pos}${slotIdx+1}: ${p.fullName} — ${p.injuryDetail}`
+                      : `${pos}${slotIdx+1}: ${p.fullName}`;
+                    const injClass = p.injury ? `inj-${p.injury}` : '';
+                    return `
+                      <div class="slot ${deepClass}" title="${tooltip}">
+                        ${hasPlayer ? `<span class="s-num">${slotIdx + 1}</span>` : ''}
+                        <span class="p-name">${p.shortName}</span>
+                        ${p.injury ? `<span class="inj ${injClass}">${p.injury}</span>` : ''}
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBoard() {
+      const westTeams = LEAGUE_DATA.filter(t => t.conf === 'WEST');
+      const eastTeams = LEAGUE_DATA.filter(t => t.conf === 'EAST');
+
+      document.getElementById('grid-west').innerHTML = westTeams.map((t, i) => buildCardHTML(t, i)).join('');
+      document.getElementById('grid-east').innerHTML = eastTeams.map((t, i) => buildCardHTML(t, i)).join('');
+      filterCards();
+    }
+
+    function filterCards() {
+      const q = document.getElementById('search').value.toLowerCase().trim();
+      LEAGUE_DATA.forEach(t => {
+        const card = document.getElementById(`card-${t.abbr}`);
+        if (!card) return;
+        if (!q) {
+          card.classList.remove('dimmed');
+          return;
+        }
+        const matchTeam = t.team.toLowerCase().includes(q) || t.abbr.toLowerCase().includes(q);
+        const matchPlayer = Object.values(t.depth).some(posList =>
+          posList.some(p => 
+            p.fullName.toLowerCase().includes(q) || 
+            p.shortName.toLowerCase().includes(q) ||
+            (p.injury && p.injury.toLowerCase() === q) ||
+            (p.injuryCode && p.injuryCode.toLowerCase() === q)
+          )
+        );
+        if (matchTeam || matchPlayer) {
+          card.classList.remove('dimmed');
+        } else {
+          card.classList.add('dimmed');
+        }
+      });
+    }
+
+    async function fetchLiveDepth() {
+      const statusEl = document.getElementById('last-updated');
+      const pulseEl = document.getElementById('pulse-dot');
+      try {
+        statusEl.textContent = 'Syncing...';
+        const res = await fetch(WORKER_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        LEAGUE_DATA = data.teams || [];
+        renderBoard();
+
+        const timeStr = new Date(data.updatedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        statusEl.textContent = `Updated ${timeStr} (2m auto)`;
+        pulseEl.style.background = '#10b981';
+      } catch (err) {
+        statusEl.textContent = 'Sync error (check Worker URL)';
+        pulseEl.style.background = '#ef4444';
+      }
+    }
+
+    // Initial load + automatic refresh every 120 seconds (120,000 ms)
+    fetchLiveDepth();
+    setInterval(fetchLiveDepth, 120000);
+  </script>
+</body>
+</html>

@@ -356,7 +356,6 @@
   </div>
 
   <script>
-    // PASTE YOUR CLOUDFLARE WORKER URL HERE:
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
 
     let LEAGUE_DATA = [];
@@ -520,7 +519,6 @@
       }
     }
 
-    // Initial load + automatic refresh every 120 seconds (120,000 ms)
     fetchLiveDepth();
     setInterval(fetchLiveDepth, 120000);
   </script>

@@ -68,6 +68,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    white-space: nowrap;
   }
 
   .pulse {
@@ -512,8 +513,10 @@
         LEAGUE_DATA = data.teams || [];
         renderBoard();
 
-        const timeStr = new Date(data.updatedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        statusEl.textContent = `Updated ${timeStr} (2m auto)`;
+        const dt = new Date(data.updatedAt || Date.now());
+        const dateStr = dt.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        statusEl.textContent = `Updated ${dateStr}, ${timeStr} (2m auto)`;
         pulseEl.style.background = '#10b981';
       } catch (err) {
         statusEl.textContent = 'Sync error (check Worker URL)';

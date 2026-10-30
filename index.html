@@ -46,14 +46,19 @@
     font-size: 10px;
     color: #94a3b8;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
   }
 
-  .legend-item {
+  .legend-pill {
     display: inline-flex;
     align-items: center;
     gap: 3px;
+    padding: 0px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #f1f5f9;
   }
 
   .controls {
@@ -284,6 +289,34 @@
     overflow: hidden;
     white-space: nowrap;
     min-width: 0;
+    padding: 0.5px 3px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+  }
+
+  /* Transparent Outlines Scaled by Injury Probability */
+  /* 1. OUT: Red Outline */
+  .slot-inj-O {
+    border-color: rgba(239, 68, 68, 0.75);
+    background: rgba(239, 68, 68, 0.12);
+  }
+
+  /* 2. DOUBTFUL (~25% play): Darkest Amber-Yellow Outline */
+  .slot-inj-D {
+    border-color: rgba(249, 115, 22, 0.78);
+    background: rgba(249, 115, 22, 0.14);
+  }
+
+  /* 3. QUESTIONABLE / DTD (~50% play): Medium Gold-Yellow Outline */
+  .slot-inj-Q, .slot-inj-DTD {
+    border-color: rgba(234, 179, 8, 0.62);
+    background: rgba(234, 179, 8, 0.09);
+  }
+
+  /* 4. PROBABLE (~75% play): Lightest Pale-Yellow Outline */
+  .slot-inj-P {
+    border-color: rgba(253, 224, 71, 0.38);
+    background: rgba(253, 224, 71, 0.04);
   }
 
   .s-num {
@@ -304,23 +337,23 @@
 
   .card.active .p-name { font-size: 7.8px; }
   .card.active .s-num { font-size: 6px; }
+  .card.active .slot { padding: 0.5px 2px; }
 
   .inj {
-    font-size: 6.5px;
+    font-size: 6px;
     font-weight: 800;
-    padding: 0 1.5px;
-    border-radius: 1.5px;
+    margin-left: auto;
+    padding-left: 1px;
     flex-shrink: 0;
     line-height: 1;
-    position: relative;
-    top: -1px;
   }
 
-  .inj-O { color: #f87171; background: rgba(153, 27, 27, 0.45); }
-  .inj-DTD, .inj-Q { color: #fbbf24; background: rgba(120, 53, 15, 0.45); }
-  .inj-D { color: #fb923c; background: rgba(124, 45, 18, 0.45); }
+  .inj-O { color: #fca5a5; }
+  .inj-D { color: #fdba74; }
+  .inj-DTD, .inj-Q { color: #fde047; }
+  .inj-P { color: #fef08a; }
 
-  .card.active .inj { font-size: 5.5px; padding: 0 1px; }
+  .card.active .inj { font-size: 5px; }
 </style>
 </head>
 <body>
@@ -330,9 +363,10 @@
       <div class="legend">
         <span>Click any team to <strong>2× Zoom (1st–5th String)</strong></span>
         <span>•</span>
-        <span class="legend-item"><span class="inj inj-O" style="top:0">O</span> Out</span>
-        <span class="legend-item"><span class="inj inj-D" style="top:0">D</span> Doubtful</span>
-        <span class="legend-item"><span class="inj inj-Q" style="top:0">Q</span> / <span class="inj inj-DTD" style="top:0">DTD</span> Day-to-Day</span>
+        <span class="legend-pill slot-inj-O"><span class="inj inj-O">O</span> Out</span>
+        <span class="legend-pill slot-inj-D"><span class="inj inj-D">D</span> Doubtful</span>
+        <span class="legend-pill slot-inj-Q"><span class="inj inj-Q">Q/DTD</span> Questionable</span>
+        <span class="legend-pill slot-inj-P"><span class="inj inj-P">P</span> Probable</span>
       </div>
     </div>
     <div class="controls">
@@ -450,12 +484,13 @@
                     const tooltip = p.injuryDetail 
                       ? `${pos}${slotIdx+1}: ${p.fullName} — ${p.injuryDetail}`
                       : `${pos}${slotIdx+1}: ${p.fullName}`;
-                    const injClass = p.injury ? `inj-${p.injury}` : '';
+                    const slotInjClass = p.injury ? `slot-inj-${p.injury}` : '';
+                    const injTextClass = p.injury ? `inj-${p.injury}` : '';
                     return `
-                      <div class="slot ${deepClass}" title="${tooltip}">
+                      <div class="slot ${deepClass} ${slotInjClass}" title="${tooltip}">
                         ${hasPlayer ? `<span class="s-num">${slotIdx + 1}</span>` : ''}
                         <span class="p-name">${p.shortName}</span>
-                        ${p.injury ? `<span class="inj ${injClass}">${p.injury}</span>` : ''}
+                        ${p.injury ? `<span class="inj ${injTextClass}">${p.injury}</span>` : ''}
                       </div>
                     `;
                   }).join('')}

@@ -446,7 +446,7 @@
     }
 
     .sync-status {
-      font-size: 8px;
+      font-size: 7.5px;
     }
 
     input {
@@ -463,7 +463,7 @@
       overflow-y: hidden;
       scroll-snap-type: x mandatory;
       gap: 6px;
-      padding-top: 7px; /* Prevents top conference text from clipping! */
+      padding-top: 7px;
       scrollbar-width: none;
       -ms-overflow-style: none;
     }
@@ -831,8 +831,11 @@
         renderBoard();
 
         const dt = new Date(data.updatedAt || Date.now());
-        const dateStr = dt.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-        const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        const isUS = tz.startsWith("America/") && (navigator.language || "").toUpperCase().endsWith("US");
+
+        const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: isUS });
         statusEl.textContent = `Updates every 2 mins - last updated ${dateStr}, ${timeStr}`;
         pulseEl.style.background = '#10b981';
       } catch (err) {

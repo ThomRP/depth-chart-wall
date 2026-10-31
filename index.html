@@ -833,7 +833,7 @@
         const dt = new Date(data.updatedAt || Date.now());
         const dateStr = dt.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
         const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        statusEl.textContent = `Updated ${dateStr}, ${timeStr}`;
+        statusEl.textContent = `Updates every 2 mins - last updated ${dateStr}, ${timeStr}`;
         pulseEl.style.background = '#10b981';
       } catch (err) {
         statusEl.textContent = 'Sync error (check Worker URL)';

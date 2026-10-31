@@ -5,7 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>NBA 30-Team Depth Chart Wallboard</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
   
   body {
     background: #070a12;
@@ -114,7 +121,6 @@
   }
   input:focus { border-color: #f97316; }
 
-  /* Mobile Conference Switcher Tabs (Hidden on Desktop) */
   .mobile-tabs {
     display: none;
   }
@@ -339,6 +345,10 @@
     min-width: 0;
   }
 
+  /* Desktop shows D. Garland (.d-short), hides mobile last-name-only (.m-last) */
+  .m-last { display: none; }
+  .d-short { display: inline; }
+
   .card.active .p-name { font-size: 7.8px; }
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
@@ -364,15 +374,15 @@
      ========================================================= */
   @media (max-width: 768px) {
     body {
-      padding: 4px 4px 4px;
-      gap: 4px;
+      padding: 3px 3px 3px;
+      gap: 3px;
     }
 
     header {
       height: auto;
       flex-wrap: wrap;
-      gap: 4px;
-      padding: 0 2px;
+      gap: 3px;
+      padding: 0 1px;
     }
 
     .title-group {
@@ -382,7 +392,7 @@
     }
 
     h1 {
-      font-size: 11px;
+      font-size: 10.5px;
     }
 
     .legend {
@@ -394,7 +404,7 @@
     }
 
     .legend-pill {
-      font-size: 7.5px;
+      font-size: 7px;
       padding: 0 3px;
     }
 
@@ -404,7 +414,6 @@
       gap: 4px;
     }
 
-    /* Swipeable West / East Pill Switcher on Mobile */
     .mobile-tabs {
       display: flex;
       background: #111827;
@@ -415,28 +424,28 @@
     }
 
     .m-tab {
-      font-size: 9.5px;
+      font-size: 9px;
       font-weight: 800;
-      padding: 3px 8px;
+      padding: 2px 7px;
       color: #64748b;
       background: transparent;
       border: none;
       cursor: pointer;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.3px;
     }
 
     .m-tab.active-west {
-      background: rgba(249, 115, 22, 0.2);
+      background: rgba(249, 115, 22, 0.22);
       color: #fb923c;
     }
 
     .m-tab.active-east {
-      background: rgba(56, 189, 248, 0.2);
+      background: rgba(56, 189, 248, 0.22);
       color: #38bdf8;
     }
 
     .sync-status {
-      font-size: 8.5px;
+      font-size: 8px;
     }
 
     input {
@@ -447,13 +456,12 @@
       padding: 2px 6px;
     }
 
-    /* Horizontal Swipe Carousel for West & East */
     .board {
       display: flex;
       overflow-x: auto;
       overflow-y: hidden;
       scroll-snap-type: x mandatory;
-      gap: 8px;
+      gap: 6px;
       scrollbar-width: none;
       -ms-overflow-style: none;
     }
@@ -467,31 +475,31 @@
       height: 100%;
       scroll-snap-align: start;
       scroll-snap-stop: always;
-      padding: 6px 3px 3px;
+      padding: 5px 2px 2px;
     }
 
     .conf-label {
-      font-size: 8px;
+      font-size: 7.5px;
       top: -5px;
     }
 
     .conf-grid {
-      gap: 3px;
+      gap: 2.5px;
     }
 
     .card-header {
-      height: 18px;
-      padding: 1px 4px;
-      gap: 4px;
+      height: 16px;
+      padding: 1px 3px;
+      gap: 3px;
     }
 
     .card-header img {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
     }
 
     .team-name {
-      font-size: 9px;
+      font-size: 8.5px;
     }
 
     .col-labels {
@@ -499,45 +507,52 @@
     }
 
     .roster {
-      padding: 1px 3px;
+      padding: 0px 2px;
     }
 
     .pos-row {
-      grid-template-columns: 11px repeat(3, minmax(0, 1fr));
-      gap: 1.5px;
+      grid-template-columns: 9px repeat(3, minmax(0, 1fr));
+      gap: 1px;
       padding: 0;
     }
 
     .pos {
-      font-size: 7.5px;
+      font-size: 6.5px;
+      letter-spacing: -0.3px;
     }
 
     .slot {
-      padding: 0 1.5px;
+      padding: 0 1px;
       gap: 1px;
+      border-radius: 2px;
     }
 
     .s-num {
-      font-size: 6px;
+      font-size: 5px;
     }
 
+    /* Unzoomed mobile: show Last Name Only at ultra-crisp 6.8px so full surname fits! */
     .p-name {
-      font-size: 3px;
-      font-weight: 600;
+      font-size: 6.8px;
+      font-weight: 500;
+      letter-spacing: -0.25px;
+    }
+    .card:not(.active) .d-short { display: none; }
+    .card:not(.active) .m-last { display: inline; }
+
+    /* Hide the extra O/DTD letter on unzoomed mobile since the colored outline already shows it */
+    .card:not(.active) .inj {
+      display: none;
     }
 
-    .inj {
-      font-size: 5.5px;
-    }
-
-    /* Mobile Enlarged Card: Centered Full-Width Modal instead of tiny 2x scale */
+    /* Mobile Enlarged Card: Centered Full-Width Modal */
     .card.active {
       position: fixed !important;
       top: 50% !important;
       left: 50% !important;
       transform: translate(-50%, -50%) !important;
       width: 96vw !important;
-      height: 250px !important;
+      height: 240px !important;
       z-index: 200 !important;
       border-radius: 8px;
     }
@@ -548,42 +563,44 @@
     }
 
     .card.active .card-header img {
-      width: 22px;
-      height: 22px;
+      width: 20px;
+      height: 20px;
     }
 
     .card.active .team-name {
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .card.active .col-labels {
       display: block;
-      font-size: 8px;
-    }
-
-    .card.active .roster {
-      padding: 4px 6px;
-    }
-
-    .card.active .pos-row {
-      grid-template-columns: 16px repeat(5, minmax(0, 1fr));
-      gap: 3px;
-    }
-
-    .card.active .pos {
-      font-size: 10px;
-    }
-
-    .card.active .p-name {
-      font-size: 9.5px;
-    }
-
-    .card.active .s-num {
       font-size: 7.5px;
     }
 
-    .card.active .inj {
+    .card.active .roster {
+      padding: 4px 5px;
+    }
+
+    .card.active .pos-row {
+      grid-template-columns: 14px repeat(5, minmax(0, 1fr));
+      gap: 2px;
+    }
+
+    .card.active .pos {
+      font-size: 9px;
+    }
+
+    .card.active .p-name {
+      font-size: 8.5px;
+      letter-spacing: -0.2px;
+    }
+
+    .card.active .s-num {
       font-size: 6.5px;
+    }
+
+    .card.active .inj {
+      display: inline;
+      font-size: 6px;
     }
   }
 </style>
@@ -634,13 +651,18 @@
     let activeCardId = null;
     let activeConf = null;
 
+    function getLastName(shortName) {
+      if (!shortName || shortName === '-') return '-';
+      const idx = shortName.indexOf('. ');
+      return idx !== -1 ? shortName.slice(idx + 2) : shortName;
+    }
+
     function scrollToConf(conf) {
       const board = document.getElementById('board');
       const left = conf === 'EAST' ? board.clientWidth : 0;
       board.scrollTo({ left, behavior: 'smooth' });
     }
 
-    // Highlight active WEST/EAST tab when user swipes on mobile
     document.getElementById('board').addEventListener('scroll', (e) => {
       const board = e.target;
       const isEast = board.scrollLeft > board.clientWidth * 0.45;
@@ -737,6 +759,7 @@
                     const p = players[slotIdx] || {shortName: '-', fullName: '-', injury: '', injuryDetail: ''};
                     const deepClass = slotIdx >= 3 ? 'slot-deep' : '';
                     const hasPlayer = p.shortName && p.shortName !== '-';
+                    const lastName = getLastName(p.shortName);
                     const tooltip = p.injuryDetail 
                       ? `${pos}${slotIdx+1}: ${p.fullName} — ${p.injuryDetail}`
                       : `${pos}${slotIdx+1}: ${p.fullName}`;
@@ -745,7 +768,10 @@
                     return `
                       <div class="slot ${deepClass} ${slotInjClass}" title="${tooltip}">
                         ${hasPlayer ? `<span class="s-num">${slotIdx + 1}</span>` : ''}
-                        <span class="p-name">${p.shortName}</span>
+                        <span class="p-name">
+                          <span class="d-short">${p.shortName}</span>
+                          <span class="m-last">${lastName}</span>
+                        </span>
                         ${p.injury ? `<span class="inj ${injTextClass}">${p.injury}</span>` : ''}
                       </div>
                     `;

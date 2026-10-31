@@ -255,6 +255,14 @@
     text-overflow: ellipsis;
   }
 
+  .team-record {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
   .header-right {
     margin-left: auto;
     display: flex;
@@ -415,6 +423,7 @@
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
   .card.active .game-tag, .card.active .game-live { font-size: 6.8px; padding: 0.5px 4px; }
+  .card.active .team-record { font-size: 8px; }
 
   .inj {
     font-size: 6px;
@@ -567,6 +576,10 @@
       font-size: 8px;
     }
 
+    .team-record {
+      font-size: 6.5px;
+    }
+
     .game-tag {
       font-size: 6px;
       padding: 0.5px 2.5px;
@@ -583,7 +596,6 @@
       height: 3.5px;
     }
 
-    /* On unzoomed mobile, hide opponent & word "LIVE" so score + quarter fit cleanly */
     .card:not(.active) .g-opp,
     .card:not(.active) .g-live-word {
       display: none;
@@ -649,6 +661,10 @@
 
     .card.active .team-name {
       font-size: 12px;
+    }
+
+    .card.active .team-record {
+      font-size: 10px;
     }
 
     .card.active .game-tag, .card.active .game-live {
@@ -748,7 +764,6 @@
       if (s.includes('HALF')) return 'Half';
       if (s.includes('END OF')) return clockStr.replace(/End of /i, 'End ').replace('1st', 'Q1').replace('2nd', 'Q2').replace('3rd', 'Q3').replace('4th', 'Q4');
       
-      // ESPN format is usually "4:32 - 3rd" -> convert to "Q3 4:32"
       const parts = clockStr.split(' - ');
       if (parts.length === 2) {
         const time = parts[0].trim();
@@ -766,7 +781,6 @@
     function formatGameBadge(game) {
       if (!game) return '';
 
-      // 1. Actively Playing Right Now (state === "in")
       if (game.isLive) {
         const opp = game.opp ? `<span class="g-opp">${game.opp}</span>` : '';
         const score = game.score ? `<span class="live-score">${game.score}</span>` : '';
@@ -781,7 +795,6 @@
         return `<span class="game-live" title="${tipParts.join(' • ')}"><span class="live-dot"></span><span class="g-live-word">LIVE</span>${opp}${score}${qtrSpan}</span>`;
       }
 
-      // 2. Scheduled Next Game (state === "pre")
       if (!game.date) return '';
       const dt = new Date(game.date);
       if (isNaN(dt.getTime())) return '';
@@ -898,6 +911,7 @@
           <div class="card-header">
             <img src="${t.logo}" alt="${t.abbr}">
             <span class="team-name">${t.team}</span>
+            ${t.record ? `<span class="team-record">${t.record}</span>` : ''}
             <div class="header-right">
               ${gameBadgeHTML}
               <span class="col-labels">1ST–5TH</span>

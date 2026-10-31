@@ -230,7 +230,7 @@
   .card-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     padding: 2px 6px;
     background: #162033;
     border-bottom: 1px solid #1e293b;
@@ -259,7 +259,7 @@
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     flex-shrink: 0;
   }
 
@@ -277,19 +277,29 @@
   }
 
   .game-live {
-    font-size: 8.5px;
+    font-size: 8px;
     font-weight: 800;
     color: #34d399;
-    background: rgba(6, 78, 59, 0.65);
-    border: 1px solid rgba(16, 185, 129, 0.65);
+    background: rgba(6, 78, 59, 0.7);
+    border: 1px solid rgba(16, 185, 129, 0.7);
     padding: 1px 5px;
     border-radius: 3px;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 3.5px;
-    letter-spacing: 0.3px;
+    gap: 3px;
+    letter-spacing: 0.15px;
     box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+  }
+
+  .live-score {
+    color: #ffffff;
+    font-weight: 800;
+  }
+
+  .live-qtr {
+    color: #a7f3d0;
+    font-weight: 700;
   }
 
   .live-dot {
@@ -299,6 +309,7 @@
     background: #10b981;
     box-shadow: 0 0 5px #10b981;
     animation: livePulse 1.4s infinite ease-in-out;
+    flex-shrink: 0;
   }
 
   @keyframes livePulse {
@@ -403,7 +414,7 @@
   .card.active .p-name { font-size: 7.8px; }
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
-  .card.active .game-tag, .card.active .game-live { font-size: 7px; padding: 0.5px 4px; }
+  .card.active .game-tag, .card.active .game-live { font-size: 6.8px; padding: 0.5px 4px; }
 
   .inj {
     font-size: 6px;
@@ -544,7 +555,7 @@
     .card-header {
       height: 16px;
       padding: 1px 3px;
-      gap: 3px;
+      gap: 2.5px;
     }
 
     .card-header img {
@@ -562,8 +573,8 @@
     }
 
     .game-live {
-      font-size: 6px;
-      padding: 0.5px 3px;
+      font-size: 5.8px;
+      padding: 0.5px 2.5px;
       gap: 2px;
     }
 
@@ -572,8 +583,9 @@
       height: 3.5px;
     }
 
-    /* On unzoomed mobile, hide opponent text inside next-game tag to save space */
-    .card:not(.active) .g-opp {
+    /* On unzoomed mobile, hide opponent & word "LIVE" so score + quarter fit cleanly */
+    .card:not(.active) .g-opp,
+    .card:not(.active) .g-live-word {
       display: none;
     }
 
@@ -730,17 +742,43 @@
       return idx !== -1 ? shortName.slice(idx + 2) : shortName;
     }
 
+    function formatQuarter(clockStr) {
+      if (!clockStr) return '';
+      const s = clockStr.toUpperCase();
+      if (s.includes('HALF')) return 'Half';
+      if (s.includes('END OF')) return clockStr.replace(/End of /i, 'End ').replace('1st', 'Q1').replace('2nd', 'Q2').replace('3rd', 'Q3').replace('4th', 'Q4');
+      
+      // ESPN format is usually "4:32 - 3rd" -> convert to "Q3 4:32"
+      const parts = clockStr.split(' - ');
+      if (parts.length === 2) {
+        const time = parts[0].trim();
+        const per = parts[1].trim().toUpperCase();
+        let q = per;
+        if (per === '1ST') q = 'Q1';
+        else if (per === '2ND') q = 'Q2';
+        else if (per === '3RD') q = 'Q3';
+        else if (per === '4TH') q = 'Q4';
+        return `${q} ${time}`;
+      }
+      return clockStr;
+    }
+
     function formatGameBadge(game) {
       if (!game) return '';
 
       // 1. Actively Playing Right Now (state === "in")
       if (game.isLive) {
-        const opp = game.opp ? ` <span class="g-opp">${game.opp}</span>` : '';
+        const opp = game.opp ? `<span class="g-opp">${game.opp}</span>` : '';
+        const score = game.score ? `<span class="live-score">${game.score}</span>` : '';
+        const qtr = formatQuarter(game.clock);
+        const qtrSpan = qtr ? `<span class="live-qtr">(${qtr})</span>` : '';
+
         const tipParts = ['LIVE GAME'];
         if (game.opp) tipParts.push(game.opp);
         if (game.score) tipParts.push(game.score);
         if (game.clock) tipParts.push(game.clock);
-        return `<span class="game-live" title="${tipParts.join(' • ')}"><span class="live-dot"></span>LIVE${opp}</span>`;
+
+        return `<span class="game-live" title="${tipParts.join(' • ')}"><span class="live-dot"></span><span class="g-live-word">LIVE</span>${opp}${score}${qtrSpan}</span>`;
       }
 
       // 2. Scheduled Next Game (state === "pre")

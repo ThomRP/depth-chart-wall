@@ -227,10 +227,6 @@
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(249, 115, 22, 0.7);
   }
 
-  .card .label-5 { display: none; }
-  .card.active .label-3 { display: none; }
-  .card.active .label-5 { display: inline; }
-
   .card-header {
     display: flex;
     align-items: center;
@@ -259,13 +255,67 @@
     text-overflow: ellipsis;
   }
 
-  .col-labels {
+  .header-right {
     margin-left: auto;
-    font-size: 7.5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  /* Next Game & Live Game Header Tags */
+  .game-tag {
+    font-size: 8.5px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    letter-spacing: 0.1px;
+  }
+
+  .game-live {
+    font-size: 8.5px;
+    font-weight: 800;
+    color: #34d399;
+    background: rgba(6, 78, 59, 0.65);
+    border: 1px solid rgba(16, 185, 129, 0.65);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3.5px;
+    letter-spacing: 0.3px;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+  }
+
+  .live-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 5px #10b981;
+    animation: livePulse 1.4s infinite ease-in-out;
+  }
+
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.85); }
+  }
+
+  .col-labels {
+    display: none;
+    font-size: 7px;
     color: #64748b;
     font-weight: 700;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     white-space: nowrap;
+  }
+  .card.active .col-labels {
+    display: inline;
   }
 
   .roster {
@@ -353,6 +403,7 @@
   .card.active .p-name { font-size: 7.8px; }
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
+  .card.active .game-tag, .card.active .game-live { font-size: 7px; padding: 0.5px 4px; }
 
   .inj {
     font-size: 6px;
@@ -502,10 +553,27 @@
     }
 
     .team-name {
-      font-size: 8.5px;
+      font-size: 8px;
     }
 
-    .col-labels {
+    .game-tag {
+      font-size: 6px;
+      padding: 0.5px 2.5px;
+    }
+
+    .game-live {
+      font-size: 6px;
+      padding: 0.5px 3px;
+      gap: 2px;
+    }
+
+    .live-dot {
+      width: 3.5px;
+      height: 3.5px;
+    }
+
+    /* On unzoomed mobile, hide opponent text inside next-game tag to save space */
+    .card:not(.active) .g-opp {
       display: none;
     }
 
@@ -571,9 +639,9 @@
       font-size: 12px;
     }
 
-    .card.active .col-labels {
-      display: block;
-      font-size: 7.5px;
+    .card.active .game-tag, .card.active .game-live {
+      font-size: 8.5px;
+      padding: 1px 5px;
     }
 
     .card.active .roster {
@@ -627,7 +695,7 @@
         <span id="last-updated">Connecting...</span>
       </div>
       <button class="btn-refresh" onclick="fetchLiveDepth(true)">↻ Sync</button>
-      <input type="text" id="search" placeholder="Search team, player, 'OUT'..." oninput="filterCards()">
+      <input type="text" id="search" placeholder="Search team, player, 'LIVE', 'OUT'..." oninput="filterCards()">
     </div>
   </header>
 
@@ -651,10 +719,57 @@
     let activeCardId = null;
     let activeConf = null;
 
+    function isUSUser() {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      return tz.startsWith("America/") && (navigator.language || "").toUpperCase().endsWith("US");
+    }
+
     function getLastName(shortName) {
       if (!shortName || shortName === '-') return '-';
       const idx = shortName.indexOf('. ');
       return idx !== -1 ? shortName.slice(idx + 2) : shortName;
+    }
+
+    function formatGameBadge(game) {
+      if (!game) return '';
+
+      // 1. Actively Playing Right Now (state === "in")
+      if (game.isLive) {
+        const opp = game.opp ? ` <span class="g-opp">${game.opp}</span>` : '';
+        const tipParts = ['LIVE GAME'];
+        if (game.opp) tipParts.push(game.opp);
+        if (game.score) tipParts.push(game.score);
+        if (game.clock) tipParts.push(game.clock);
+        return `<span class="game-live" title="${tipParts.join(' • ')}"><span class="live-dot"></span>LIVE${opp}</span>`;
+      }
+
+      // 2. Scheduled Next Game (state === "pre")
+      if (!game.date) return '';
+      const dt = new Date(game.date);
+      if (isNaN(dt.getTime())) return '';
+
+      const now = new Date();
+      const isToday = dt.toDateString() === now.toDateString();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      const isTomorrow = dt.toDateString() === tomorrow.toDateString();
+
+      const use12h = isUSUser();
+      const timeStr = dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: use12h });
+
+      let dateLabel = '';
+      if (isToday) {
+        dateLabel = `Today ${timeStr}`;
+      } else if (isTomorrow) {
+        dateLabel = `Tmrw ${timeStr}`;
+      } else {
+        const dayStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        dateLabel = `${dayStr}, ${timeStr}`;
+      }
+
+      const oppSpan = game.opp ? ` <span class="g-opp">${game.opp}</span>` : '';
+      const fullTooltip = `Next Game: ${dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at ${timeStr} ${game.opp || ''}`;
+      return `<span class="game-tag" title="${fullTooltip}">${dateLabel}${oppSpan}</span>`;
     }
 
     function scrollToConf(conf) {
@@ -737,6 +852,7 @@
       const cardId = `card-${t.abbr}`;
       const origin = getTransformOrigin(t.conf, localIdx);
       const isActive = activeCardId === cardId ? 'active' : '';
+      const gameBadgeHTML = formatGameBadge(t.game);
       return `
         <div class="card ${isActive}" id="${cardId}" 
              onclick="toggleCard('${cardId}', '${t.conf}', event)"
@@ -744,10 +860,10 @@
           <div class="card-header">
             <img src="${t.logo}" alt="${t.abbr}">
             <span class="team-name">${t.team}</span>
-            <span class="col-labels">
-              <span class="label-3">1ST / 2ND / 3RD</span>
-              <span class="label-5">1ST / 2ND / 3RD / 4TH / 5TH</span>
-            </span>
+            <div class="header-right">
+              ${gameBadgeHTML}
+              <span class="col-labels">1ST–5TH</span>
+            </div>
           </div>
           <div class="roster">
             ${['PG', 'SG', 'SF', 'PF', 'C'].map(pos => {
@@ -803,6 +919,7 @@
           return;
         }
         const matchTeam = t.team.toLowerCase().includes(q) || t.abbr.toLowerCase().includes(q);
+        const matchLive = q === 'live' && t.game && t.game.isLive;
         const matchPlayer = Object.values(t.depth).some(posList =>
           posList.some(p => 
             p.fullName.toLowerCase().includes(q) || 
@@ -811,7 +928,7 @@
             (p.injuryCode && p.injuryCode.toLowerCase() === q)
           )
         );
-        if (matchTeam || matchPlayer) {
+        if (matchTeam || matchLive || matchPlayer) {
           card.classList.remove('dimmed');
         } else {
           card.classList.add('dimmed');
@@ -831,8 +948,7 @@
         renderBoard();
 
         const dt = new Date(data.updatedAt || Date.now());
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-        const isUS = tz.startsWith("America/") && (navigator.language || "").toUpperCase().endsWith("US");
+        const isUS = isUSUser();
 
         const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
         const timeStr = dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: isUS });

@@ -24,7 +24,7 @@
     display: flex;
     flex-direction: column;
     padding: 4px 8px 6px;
-    gap: 6px;
+    gap: 4px;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
@@ -145,6 +145,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    padding-top: 6px;
     min-height: 0;
   }
 
@@ -180,6 +181,7 @@
     letter-spacing: 1.1px;
     text-transform: uppercase;
     white-space: nowrap;
+    line-height: 1;
   }
 
   .conf-box.west .conf-label { color: rgba(251, 146, 60, 0.85); }
@@ -345,7 +347,6 @@
     min-width: 0;
   }
 
-  /* Desktop shows D. Garland (.d-short), hides mobile last-name-only (.m-last) */
   .m-last { display: none; }
   .d-short { display: inline; }
 
@@ -375,7 +376,7 @@
   @media (max-width: 768px) {
     body {
       padding: 3px 3px 3px;
-      gap: 3px;
+      gap: 2px;
     }
 
     header {
@@ -462,6 +463,7 @@
       overflow-y: hidden;
       scroll-snap-type: x mandatory;
       gap: 6px;
+      padding-top: 7px; /* Prevents top conference text from clipping! */
       scrollbar-width: none;
       -ms-overflow-style: none;
     }
@@ -475,12 +477,13 @@
       height: 100%;
       scroll-snap-align: start;
       scroll-snap-stop: always;
-      padding: 5px 2px 2px;
+      padding: 6px 2px 2px;
     }
 
     .conf-label {
       font-size: 7.5px;
       top: -5px;
+      padding: 0 6px;
     }
 
     .conf-grid {
@@ -531,7 +534,6 @@
       font-size: 5px;
     }
 
-    /* Unzoomed mobile: show Last Name Only at ultra-crisp 6.8px so full surname fits! */
     .p-name {
       font-size: 6.8px;
       font-weight: 500;
@@ -540,12 +542,10 @@
     .card:not(.active) .d-short { display: none; }
     .card:not(.active) .m-last { display: inline; }
 
-    /* Hide the extra O/DTD letter on unzoomed mobile since the colored outline already shows it */
     .card:not(.active) .inj {
       display: none;
     }
 
-    /* Mobile Enlarged Card: Centered Full-Width Modal */
     .card.active {
       position: fixed !important;
       top: 50% !important;

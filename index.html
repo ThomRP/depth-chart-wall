@@ -762,16 +762,15 @@
 
   <script>
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
-    const GAMELOG_API = (id) => `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${id}/gamelog`;
 
     let LEAGUE_DATA = [];
     let USG_CACHE = {};
     let activeCardId = null;
     let activeConf = null;
 
-    // Load cached 8-game USG% from localStorage (valid for 30 mins)
+    // Load cached 8-game USG% from localStorage (v3 key clears any old null cache)
     try {
-      const saved = JSON.parse(localStorage.getItem('nba_usg_cache_v1') || '{}');
+      const saved = JSON.parse(localStorage.getItem('nba_usg_cache_v3') || '{}');
       if (saved.ts && (Date.now() - saved.ts < 30 * 60 * 1000)) {
         USG_CACHE = saved.data || {};
       }
@@ -779,78 +778,11 @@
 
     function saveUsgCache() {
       try {
-        localStorage.setItem('nba_usg_cache_v1', JSON.stringify({ ts: Date.now(), data: USG_CACHE }));
+        localStorage.setItem('nba_usg_cache_v3', JSON.stringify({ ts: Date.now(), data: USG_CACHE }));
       } catch (e) {}
     }
 
-    // Extract regular-season game rows from ESPN's nested seasonTypes[].categories[].events structure
-    async function fetchAthleteUsgLast8(pid) {
-      if (!pid) return null;
-      if (USG_CACHE[pid] !== undefined) return USG_CACHE[pid];
-
-      try {
-        const res = await fetch(GAMELOG_API(pid));
-        if (!res.ok) return null;
-        const data = await res.json();
-
-        const names = data.names || [];
-        const minIdx = names.indexOf("MIN");
-        const fgIdx = names.indexOf("FG") !== -1 ? names.indexOf("FG") : names.indexOf("FGM-FGA");
-        const ftIdx = names.indexOf("FT") !== -1 ? names.indexOf("FT") : names.indexOf("FTM-FTA");
-        const toIdx = names.indexOf("TO");
-        if (minIdx === -1 || fgIdx === -1) return null;
-
-        // Find Regular Season category events (ESPN lists most recent games first)
-        const seasonTypes = data.seasonTypes || [];
-        const regSeason = seasonTypes.find(s => (s.displayName || "").toLowerCase().includes("regular")) || seasonTypes[0];
-        if (!regSeason) return null;
-
-        const allGameRows = [];
-        for (const cat of (regSeason.categories || [])) {
-          if (cat.events && cat.events.length) {
-            allGameRows.push(...cat.events);
-          }
-        }
-
-        let totPoss = 0;
-        let totMin = 0;
-        let gamesCounted = 0;
-
-        for (const ev of allGameRows) {
-          if (gamesCounted >= 8) break;
-          const stats = ev.stats || [];
-          const minVal = parseFloat(stats[minIdx]) || 0;
-          if (minVal <= 0) continue;
-
-          const fgParts = String(stats[fgIdx] || "0-0").split("-");
-          const fga = parseFloat(fgParts[1] ?? fgParts[0]) || 0;
-
-          const ftParts = String(stats[ftIdx] || "0-0").split("-");
-          const fta = parseFloat(ftParts[1] ?? ftParts[0]) || 0;
-
-          const tov = parseFloat(stats[toIdx]) || 0;
-
-          totPoss += fga + (0.44 * fta) + tov;
-          totMin += minVal;
-          gamesCounted++;
-        }
-
-        if (gamesCounted === 0 || totMin < 5) {
-          USG_CACHE[pid] = null;
-          return null;
-        }
-
-        // Standard NBA pace: ~2.08 team possessions per minute played
-        const usgPct = Math.round((totPoss / (totMin * 2.08)) * 100);
-        const clamped = Math.min(Math.max(usgPct, 5), 46);
-        USG_CACHE[pid] = clamped;
-        return clamped;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    // Background queue that populates USG% for all rotation players without hitting Cloudflare's 50-request limit
+    // Fetch player USG% in batches of 20 through our Cloudflare Worker (?usg=id1,id2,...)
     let usgWorkerRunning = false;
     async function hydrateAllPlayersUsg() {
       if (usgWorkerRunning) return;
@@ -862,7 +794,6 @@
           const players = t.depth[pos] || [];
           players.forEach((p, idx) => {
             if (p.id && USG_CACHE[p.id] === undefined) {
-              // Prioritize starters & 2nd/3rd string first
               queue.push({ id: p.id, priority: idx });
             }
           });
@@ -872,19 +803,26 @@
       queue.sort((a, b) => a.priority - b.priority);
       const uniqueIds = [...new Set(queue.map(q => q.id))];
 
-      const BATCH_SIZE = 8;
+      const BATCH_SIZE = 20;
       for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
         const batch = uniqueIds.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map( async (pid) => {
-          const val = await fetchAthleteUsgLast8(pid);
-          if (val !== null) {
-            document.querySelectorAll(`.usg-slot-${pid}`).forEach(el => {
-              el.innerHTML = `<span class="u-lbl">usg: </span>${val}%`;
-              el.style.display = 'inline';
-            });
+        try {
+          const res = await fetch(`${WORKER_URL}?usg=${batch.join(',')}`);
+          if (res.ok) {
+            const data = await res.json();
+            const map = data.usg || {};
+            for (const [pid, val] of Object.entries(map)) {
+              if (val !== null && val !== undefined) {
+                USG_CACHE[pid] = val;
+                document.querySelectorAll(`.usg-slot-${pid}`).forEach(el => {
+                  el.innerHTML = `<span class="u-lbl">usg: </span>${val}%`;
+                  el.style.display = 'inline';
+                });
+              }
+            }
+            saveUsgCache();
           }
-        }));
-        saveUsgCache();
+        } catch (e) {}
       }
 
       usgWorkerRunning = false;

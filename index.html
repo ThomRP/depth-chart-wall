@@ -449,6 +449,63 @@
 
   .card.active .inj { font-size: 5px; }
 
+  @media (min-width: 769px) {
+    .card.active {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: min(1100px, 96vw);
+      height: min(620px, 85dvh);
+      transform: translate(-50%, -50%);
+    }
+
+    .card.active .card-header {
+      height: 44px;
+      padding: 6px 12px;
+      gap: 8px;
+    }
+    .card.active .team-name { font-size: 15px; }
+    .card.active .team-record { font-size: 12px; }
+    .card.active .game-tag,
+    .card.active .game-live { font-size: 11px; }
+    .card.active .col-labels { font-size: 10px; }
+
+    .card.active .roster { padding: 8px 12px; }
+    .card.active .pos-row {
+      grid-template-columns: 24px repeat(5, minmax(0, 1fr));
+      gap: 6px;
+      padding: 4px 0;
+    }
+    .card.active .pos { font-size: 12px; }
+
+    .card.active .slot {
+      display: grid !important;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 3px 5px;
+      padding: 6px;
+    }
+    .card.active .s-num { grid-column: 1; grid-row: 1; font-size: 10px; }
+    .card.active .p-name {
+      grid-column: 2;
+      grid-row: 1;
+      font-size: clamp(10px, 1.1vw, 14px);
+    }
+    .card.active .p-usg {
+      grid-column: 2;
+      grid-row: 2;
+      margin-left: 0;
+      font-size: 10px;
+    }
+    .card.active .inj {
+      grid-column: 3;
+      grid-row: 1;
+      margin-left: 0;
+      padding-left: 0;
+      font-size: 10px;
+    }
+  }
+
   /* =========================================================
      MOBILE VIEW (Phones & Small Screens <= 768px)
      ========================================================= */
@@ -643,8 +700,9 @@
       font-size: 5.2px;
       letter-spacing: -0.3px;
     }
-    .card:not(.active) .u-lbl {
-      display: none;
+    .card:not(.active) .p-usg {
+      /* Override the inline display set when usage data finishes loading. */
+      display: none !important;
     }
 
     .card:not(.active) .d-short { display: none; }
@@ -726,7 +784,7 @@
     <div class="title-group">
       <h1>🏀 NBA DEPTH CHARTS</h1>
       <div class="legend">
-        <span class="legend-hint">Click any team to <strong>2× Zoom (1st–5th String)</strong> •</span>
+        <span class="legend-hint">Click any team to <strong>Enlarge (1st–5th String)</strong> •</span>
         <span class="legend-pill slot-inj-O"><span class="inj inj-O">O</span> Out</span>
         <span class="legend-pill slot-inj-D"><span class="inj inj-D">D</span> Doubt</span>
         <span class="legend-pill slot-inj-Q"><span class="inj inj-Q">Q/DTD</span> Quest</span>

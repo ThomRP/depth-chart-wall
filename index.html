@@ -408,7 +408,7 @@
   }
 
   .p-name {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     color: #f1f5f9;
     overflow: hidden;
@@ -416,10 +416,21 @@
     min-width: 0;
   }
 
+  /* Compact Usage Rate Tag (e.g., usg: 21%) */
+  .p-usg {
+    font-size: 7.5px;
+    font-weight: 600;
+    color: #94a3b8;
+    flex-shrink: 0;
+    margin-left: 1px;
+    letter-spacing: -0.2px;
+  }
+
   .m-last { display: none; }
   .d-short { display: inline; }
 
-  .card.active .p-name { font-size: 7.8px; }
+  .card.active .p-name { font-size: 7.5px; }
+  .card.active .p-usg { font-size: 5.8px; }
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
   .card.active .game-tag, .card.active .game-live { font-size: 6.8px; padding: 0.5px 4px; }
@@ -627,10 +638,19 @@
     }
 
     .p-name {
-      font-size: 6.8px;
+      font-size: 6.5px;
       font-weight: 500;
       letter-spacing: -0.25px;
     }
+    .p-usg {
+      font-size: 5.2px;
+      letter-spacing: -0.3px;
+    }
+    /* On unzoomed mobile, shorten "usg: 21%" to "21%" so it doesn't crowd the surname */
+    .card:not(.active) .u-lbl {
+      display: none;
+    }
+
     .card:not(.active) .d-short { display: none; }
     .card:not(.active) .m-last { display: inline; }
 
@@ -686,8 +706,12 @@
     }
 
     .card.active .p-name {
-      font-size: 8.5px;
+      font-size: 8px;
       letter-spacing: -0.2px;
+    }
+
+    .card.active .p-usg {
+      font-size: 6.5px;
     }
 
     .card.active .s-num {
@@ -744,8 +768,18 @@
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
 
     let LEAGUE_DATA = [];
+    let CLIENT_USG_MAP = {};
     let activeCardId = null;
     let activeConf = null;
+
+    function normName(name = "") {
+      return name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/\b(jr|sr|ii|iii|iv)\b/g, "")
+        .replace(/[^a-z]/g, "");
+    }
 
     function isUSUser() {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -924,22 +958,27 @@
                 <div class="pos-row">
                   <span class="pos">${pos}</span>
                   ${[0, 1, 2, 3, 4].map(slotIdx => {
-                    const p = players[slotIdx] || {shortName: '-', fullName: '-', injury: '', injuryDetail: ''};
+                    const p = players[slotIdx] || {shortName: '-', fullName: '-', injury: '', injuryDetail: '', usg: null};
                     const deepClass = slotIdx >= 3 ? 'slot-deep' : '';
                     const hasPlayer = p.shortName && p.shortName !== '-';
                     const lastName = getLastName(p.shortName);
-                    const tooltip = p.injuryDetail 
-                      ? `${pos}${slotIdx+1}: ${p.fullName} — ${p.injuryDetail}`
-                      : `${pos}${slotIdx+1}: ${p.fullName}`;
+                    const usgVal = p.usg !== null && p.usg !== undefined ? p.usg : CLIENT_USG_MAP[normName(p.fullName)];
+                    const hasUsg = usgVal !== null && usgVal !== undefined;
+
+                    const tooltipParts = [`${pos}${slotIdx+1}: ${p.fullName}`];
+                    if (hasUsg) tooltipParts.push(`Last 8G USG: ${usgVal}%`);
+                    if (p.injuryDetail) tooltipParts.push(p.injuryDetail);
+
                     const slotInjClass = p.injury ? `slot-inj-${p.injury}` : '';
                     const injTextClass = p.injury ? `inj-${p.injury}` : '';
                     return `
-                      <div class="slot ${deepClass} ${slotInjClass}" title="${tooltip}">
+                      <div class="slot ${deepClass} ${slotInjClass}" title="${tooltipParts.join(' — ')}">
                         ${hasPlayer ? `<span class="s-num">${slotIdx + 1}</span>` : ''}
                         <span class="p-name">
                           <span class="d-short">${p.shortName}</span>
                           <span class="m-last">${lastName}</span>
                         </span>
+                        ${hasUsg ? `<span class="p-usg"><span class="u-lbl">usg: </span>${usgVal}%</span>` : ''}
                         ${p.injury ? `<span class="inj ${injTextClass}">${p.injury}</span>` : ''}
                       </div>
                     `;

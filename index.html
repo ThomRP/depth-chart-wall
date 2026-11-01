@@ -745,20 +745,43 @@
       font-size: 9px;
     }
 
+    .card.active .slot {
+      display: grid !important;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 1px;
+    }
+
     .card.active .p-name {
+      grid-column: 2;
+      grid-row: 1;
       font-size: 8px;
       letter-spacing: -0.2px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
     }
 
     .card.active .p-usg {
+      grid-column: 2 / -1;
+      grid-row: 2;
+      margin-left: 0;
       font-size: 6.5px;
     }
 
     .card.active .s-num {
+      grid-column: 1;
+      grid-row: 1;
       font-size: 6.5px;
     }
 
     .card.active .inj {
+      grid-column: 3;
+      grid-row: 1;
+      margin-left: 0;
       display: inline;
       font-size: 6px;
     }

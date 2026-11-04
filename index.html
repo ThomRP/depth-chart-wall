@@ -78,6 +78,34 @@
     gap: 8px;
   }
 
+  .stat-toggles { display: none; }
+
+  .stat-toggles label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: #94a3b8;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .stat-toggles input {
+    width: 11px;
+    height: 11px;
+    margin: 0;
+    accent-color: #f97316;
+    cursor: pointer;
+  }
+
+  .stat-toggles input:focus-visible {
+    outline: 1px solid #f97316;
+    outline-offset: 2px;
+  }
+
+  [hidden] { display: none !important; }
+
   .sync-status {
     font-size: 10px;
     color: #64748b;
@@ -109,7 +137,7 @@
   }
   .btn-refresh:hover { border-color: #f97316; color: #fff; }
 
-  input {
+  input[type="text"] {
     background: #1e293b;
     border: 1px solid #334155;
     color: #f8fafc;
@@ -119,7 +147,7 @@
     width: 210px;
     outline: none;
   }
-  input:focus { border-color: #f97316; }
+  input[type="text"]:focus { border-color: #f97316; }
 
   .mobile-tabs {
     display: none;
@@ -414,20 +442,24 @@
     min-width: 0;
   }
 
-  .p-usg {
+  .p-stats {
+    display: inline-flex;
+    flex-direction: column;
+    align-self: center;
     font-size: 7.5px;
     font-weight: 600;
     color: #94a3b8;
     flex-shrink: 0;
     margin-left: 1px;
     letter-spacing: -0.2px;
+    line-height: 1.05;
   }
 
   .m-last { display: none; }
   .d-short { display: inline; }
 
   .card.active .p-name { font-size: 7.5px; }
-  .card.active .p-usg { font-size: 5.8px; }
+  .card.active .p-stats { font-size: 5.8px; }
   .card.active .s-num { font-size: 6px; }
   .card.active .slot { padding: 0.5px 2px; }
   .card.active .game-tag, .card.active .game-live { font-size: 6.8px; padding: 0.5px 4px; }
@@ -450,6 +482,12 @@
   .card.active .inj { font-size: 5px; }
 
   @media (min-width: 769px) {
+    header { height: auto; min-height: 22px; flex-wrap: wrap; gap: 4px; }
+    .controls { margin-left: auto; }
+    .stat-toggles { display: flex; align-items: center; gap: 7px; }
+    body.hide-usg .p-usg, body.hide-mpg .p-mpg,
+    body.hide-usg.hide-mpg .p-stats { display: none; }
+
     .card.active { transform: scale(2.1); }
     .card.active .card-header { height: 20px; }
 
@@ -477,7 +515,7 @@
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
     }
-    .card.active .p-usg {
+    .card.active .p-stats {
       grid-column: 2 / -1;
       grid-row: 2;
       margin-left: 0;
@@ -571,7 +609,7 @@
       font-size: 7.5px;
     }
 
-    input {
+    input[type="text"] {
       flex: 1;
       width: auto;
       min-width: 0;
@@ -682,13 +720,12 @@
       font-weight: 500;
       letter-spacing: -0.25px;
     }
-    .p-usg {
+    .p-stats {
       font-size: 5.2px;
       letter-spacing: -0.3px;
     }
-    .card:not(.active) .p-usg {
-      /* Override the inline display set when usage data finishes loading. */
-      display: none !important;
+    .card:not(.active) .p-stats {
+      display: none;
     }
 
     .card:not(.active) .d-short { display: none; }
@@ -765,7 +802,7 @@
       -webkit-line-clamp: 2;
     }
 
-    .card.active .p-usg {
+    .card.active .p-stats {
       grid-column: 2 / -1;
       grid-row: 2;
       margin-left: 0;
@@ -805,6 +842,10 @@
         <button class="m-tab active-west" id="tab-west" onclick="scrollToConf('WEST')">WEST ◀</button>
         <button class="m-tab" id="tab-east" onclick="scrollToConf('EAST')">▶ EAST</button>
       </div>
+      <div class="stat-toggles" role="group" aria-label="Player statistics visibility">
+        <label title="Show last 8-game usage percentage"><input type="checkbox" id="show-usg" checked>USG</label>
+        <label title="Show last 8-game minutes per game"><input type="checkbox" id="show-mpg" checked>MPG</label>
+      </div>
       <div class="sync-status">
         <span class="pulse" id="pulse-dot"></span>
         <span id="last-updated">Connecting...</span>
@@ -831,36 +872,62 @@
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
 
     let LEAGUE_DATA = [];
-    let USG_CACHE = {};
+    let PLAYER_STATS_CACHE = {};
     let activeCardId = null;
     let activeConf = null;
 
-    // Load cached 8-game USG% from localStorage (v3 key clears any old null cache)
+    // Keep both last-8-game statistics together; ignore the old USG-only cache.
     try {
-      const saved = JSON.parse(localStorage.getItem('nba_usg_cache_v3') || '{}');
+      const saved = JSON.parse(localStorage.getItem('nba_player_stats_cache_v1') || '{}');
       if (saved.ts && (Date.now() - saved.ts < 30 * 60 * 1000)) {
-        USG_CACHE = saved.data || {};
+        PLAYER_STATS_CACHE = saved.data || {};
       }
     } catch (e) {}
 
-    function saveUsgCache() {
+    // Desktop preferences do not hide statistics in the enlarged mobile view.
+    const statVisibility = { usg: true, mpg: true };
+    try {
+      const saved = JSON.parse(localStorage.getItem('nba_stat_visibility_v1') || '{}');
+      for (const metric of ['usg', 'mpg']) {
+        if (typeof saved[metric] === 'boolean') statVisibility[metric] = saved[metric];
+      }
+    } catch (e) {}
+    for (const metric of ['usg', 'mpg']) {
+      const checkbox = document.getElementById(`show-${metric}`);
+      checkbox.checked = statVisibility[metric];
+      document.body.classList.toggle(`hide-${metric}`, !checkbox.checked);
+      checkbox.addEventListener('change', () => {
+        statVisibility[metric] = checkbox.checked;
+        document.body.classList.toggle(`hide-${metric}`, !checkbox.checked);
+        try {
+          localStorage.setItem('nba_stat_visibility_v1', JSON.stringify(statVisibility));
+        } catch (e) {}
+      });
+    }
+
+    function savePlayerStatsCache() {
       try {
-        localStorage.setItem('nba_usg_cache_v3', JSON.stringify({ ts: Date.now(), data: USG_CACHE }));
+        localStorage.setItem('nba_player_stats_cache_v1', JSON.stringify({ ts: Date.now(), data: PLAYER_STATS_CACHE }));
       } catch (e) {}
     }
 
-    // Fetch player USG% in batches of 20 through our Cloudflare Worker (?usg=id1,id2,...)
-    let usgWorkerRunning = false;
-    async function hydrateAllPlayersUsg() {
-      if (usgWorkerRunning) return;
-      usgWorkerRunning = true;
+    function formatPlayerStat(metric, value) {
+      return metric === 'usg' ? `usg: ${value}%` : `mpg: ${value.toFixed(1)}`;
+    }
+
+    // Fetch both statistics in batches of 20, using one upstream gamelog per player.
+    let statsWorkerRunning = false;
+    async function hydrateAllPlayerStats() {
+      if (statsWorkerRunning) return;
+      statsWorkerRunning = true;
 
       const queue = [];
       for (const t of LEAGUE_DATA) {
         for (const pos of ['PG', 'SG', 'SF', 'PF', 'C']) {
           const players = t.depth[pos] || [];
           players.forEach((p, idx) => {
-            if (p.id && USG_CACHE[p.id] === undefined) {
+            const cached = PLAYER_STATS_CACHE[p.id];
+            if (p.id && (!Number.isFinite(cached?.usg) || !Number.isFinite(cached?.mpg))) {
               queue.push({ id: p.id, priority: idx });
             }
           });
@@ -874,25 +941,29 @@
       for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
         const batch = uniqueIds.slice(i, i + BATCH_SIZE);
         try {
-          const res = await fetch(`${WORKER_URL}?usg=${batch.join(',')}`);
+          // Bypass browser/CDN responses cached before the Worker included MPG.
+          const res = await fetch(`${WORKER_URL}?usg=${batch.join(',')}&v=5`);
           if (res.ok) {
             const data = await res.json();
-            const map = data.usg || {};
-            for (const [pid, val] of Object.entries(map)) {
-              if (val !== null && val !== undefined) {
-                USG_CACHE[pid] = val;
-                document.querySelectorAll(`.usg-slot-${pid}`).forEach(el => {
-                  el.innerHTML = `<span class="u-lbl">usg: </span>${val}%`;
-                  el.style.display = 'inline';
+            for (const pid of batch) {
+              for (const metric of ['usg', 'mpg']) {
+                const value = data[metric]?.[pid];
+                // Missing or failed lookups stay retryable on the next sync.
+                if (!Number.isFinite(value)) continue;
+                PLAYER_STATS_CACHE[pid] = { ...PLAYER_STATS_CACHE[pid], [metric]: value };
+                document.querySelectorAll(`.${metric}-slot-${pid}`).forEach(el => {
+                  el.textContent = formatPlayerStat(metric, value);
+                  el.hidden = false;
+                  el.parentElement.hidden = false;
                 });
               }
             }
-            saveUsgCache();
+            savePlayerStatsCache();
           }
         } catch (e) {}
       }
 
-      usgWorkerRunning = false;
+      statsWorkerRunning = false;
     }
 
     function isUSUser() {
@@ -1076,11 +1147,13 @@
                     const deepClass = slotIdx >= 3 ? 'slot-deep' : '';
                     const hasPlayer = p.shortName && p.shortName !== '-';
                     const lastName = getLastName(p.shortName);
-                    const cachedUsg = p.id ? USG_CACHE[p.id] : null;
-                    const hasUsg = cachedUsg !== null && cachedUsg !== undefined;
+                    const cachedStats = PLAYER_STATS_CACHE[p.id] || {};
+                    const hasUsg = Number.isFinite(cachedStats.usg);
+                    const hasMpg = Number.isFinite(cachedStats.mpg);
 
                     const tooltipParts = [`${pos}${slotIdx+1}: ${p.fullName}`];
-                    if (hasUsg) tooltipParts.push(`Last 8G USG: ${cachedUsg}%`);
+                    if (hasUsg) tooltipParts.push(`Last 8G USG: ${cachedStats.usg}%`);
+                    if (hasMpg) tooltipParts.push(`Last 8G MPG: ${cachedStats.mpg.toFixed(1)}`);
                     if (p.injuryDetail) tooltipParts.push(p.injuryDetail);
 
                     const slotInjClass = p.injury ? `slot-inj-${p.injury}` : '';
@@ -1092,7 +1165,10 @@
                           <span class="d-short">${p.shortName}</span>
                           <span class="m-last">${lastName}</span>
                         </span>
-                        <span class="p-usg usg-slot-${p.id}" style="display:${hasUsg ? 'inline' : 'none'}">${hasUsg ? `<span class="u-lbl">usg: </span>${cachedUsg}%` : ''}</span>
+                        <span class="p-stats" ${hasUsg || hasMpg ? '' : 'hidden'}>
+                          <span class="p-usg usg-slot-${p.id}" title="USG% over the last 8 regular-season appearances" ${hasUsg ? '' : 'hidden'}>${hasUsg ? formatPlayerStat('usg', cachedStats.usg) : ''}</span>
+                          <span class="p-mpg mpg-slot-${p.id}" title="Minutes per game over the last 8 regular-season appearances" ${hasMpg ? '' : 'hidden'}>${hasMpg ? formatPlayerStat('mpg', cachedStats.mpg) : ''}</span>
+                        </span>
                         ${p.injury ? `<span class="inj ${injTextClass}">${p.injury}</span>` : ''}
                       </div>
                     `;
@@ -1112,7 +1188,7 @@
       document.getElementById('grid-west').innerHTML = westTeams.map((t, i) => buildCardHTML(t, i)).join('');
       document.getElementById('grid-east').innerHTML = eastTeams.map((t, i) => buildCardHTML(t, i)).join('');
       filterCards();
-      hydrateAllPlayersUsg();
+      hydrateAllPlayerStats();
     }
 
     function filterCards() {

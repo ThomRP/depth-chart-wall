@@ -80,6 +80,37 @@
 
   .stat-toggles { display: none; }
 
+  .stat-period-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #94a3b8;
+    font-size: 9px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  #stats-period {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    color: #f8fafc;
+    font-size: 10px;
+    padding: 1px 4px;
+    cursor: pointer;
+  }
+
+  #stats-period:focus-visible {
+    outline: 1px solid #f97316;
+    outline-offset: 2px;
+  }
+
+  .stats-status {
+    font-size: 9px;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
+
   .stat-toggles label {
     display: inline-flex;
     align-items: center;
@@ -484,7 +515,7 @@
 
   @media (min-width: 769px) {
     header { height: auto; min-height: 22px; flex-wrap: wrap; gap: 4px; }
-    .controls { margin-left: auto; }
+    .controls { margin-left: auto; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; }
     .stat-toggles { display: flex; align-items: center; gap: 7px; }
     body.hide-usg .p-usg, body.hide-mpg .p-mpg,
     body.hide-usg.hide-mpg .p-stats { display: none; }
@@ -574,6 +605,7 @@
       width: 100%;
       justify-content: space-between;
       gap: 4px;
+      flex-wrap: wrap;
     }
 
     .mobile-tabs {
@@ -608,12 +640,15 @@
 
     .sync-status {
       font-size: 7.5px;
+      order: 1;
+      flex-basis: 100%;
+      justify-content: flex-end;
     }
 
     input[type="text"] {
       flex: 1;
       width: auto;
-      min-width: 0;
+      min-width: 90px;
       font-size: 10px;
       padding: 2px 6px;
     }
@@ -844,9 +879,18 @@
         <button class="m-tab" id="tab-east" onclick="scrollToConf('EAST')">▶ EAST</button>
       </div>
       <div class="stat-toggles" role="group" aria-label="Player statistics visibility">
-        <label title="Show last 8-game usage percentage"><input type="checkbox" id="show-usg" checked>USG</label>
-        <label title="Show last 8-game minutes per game"><input type="checkbox" id="show-mpg" checked>MPG</label>
+        <label title="Show usage percentage for the selected period"><input type="checkbox" id="show-usg" checked>USG</label>
+        <label title="Show minutes per game for the selected period"><input type="checkbox" id="show-mpg" checked>MPG</label>
       </div>
+      <label class="stat-period-control">
+        Stats
+        <select id="stats-period" aria-label="Statistics look-back period">
+          <option value="season">Season</option>
+          <option value="14">Last 14 games</option>
+          <option value="8" selected>Last 8 games</option>
+        </select>
+      </label>
+      <span class="stats-status" id="stats-status" role="status" hidden></span>
       <div class="sync-status">
         <span class="pulse" id="pulse-dot"></span>
         <span id="last-updated">Connecting...</span>
@@ -871,19 +915,56 @@
 
   <script>
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
+    const STAT_PERIOD_LABELS = { season: 'Season', '14': 'Last 14 games', '8': 'Last 8 games' };
+    const STATS_CACHE_TTL = 30 * 60 * 1000;
 
     let LEAGUE_DATA = [];
-    let PLAYER_STATS_CACHE = {};
+    let statPeriod = '8';
+    const PLAYER_STATS_BY_PERIOD = {};
     let activeCardId = null;
     let activeConf = null;
 
-    // Keep both last-8-game statistics together; ignore the old USG-only cache.
+    // A cache entry belongs to one period and expires independently of the others.
     try {
-      const saved = JSON.parse(localStorage.getItem('nba_player_stats_cache_v1') || '{}');
-      if (saved.ts && (Date.now() - saved.ts < 30 * 60 * 1000)) {
-        PLAYER_STATS_CACHE = saved.data || {};
+      const savedPeriod = localStorage.getItem('nba_stat_period_v1');
+      if (Object.hasOwn(STAT_PERIOD_LABELS, savedPeriod)) statPeriod = savedPeriod;
+      const saved = JSON.parse(localStorage.getItem('nba_player_stats_cache_v2') || '{}');
+      for (const period of Object.keys(STAT_PERIOD_LABELS)) {
+        const entry = saved[period];
+        if (entry?.ts && Date.now() - entry.ts < STATS_CACHE_TTL && entry.data) {
+          PLAYER_STATS_BY_PERIOD[period] = entry;
+        }
       }
     } catch (e) {}
+
+    function getPlayerStatsCache(period = statPeriod) {
+      const entry = PLAYER_STATS_BY_PERIOD[period];
+      if (!entry || Date.now() - entry.ts >= STATS_CACHE_TTL) {
+        PLAYER_STATS_BY_PERIOD[period] = { ts: Date.now(), data: {} };
+      }
+      return PLAYER_STATS_BY_PERIOD[period].data;
+    }
+
+    let PLAYER_STATS_CACHE = getPlayerStatsCache();
+    const periodSelect = document.getElementById('stats-period');
+    periodSelect.value = statPeriod;
+    periodSelect.addEventListener('change', () => {
+      statPeriod = periodSelect.value;
+      try { localStorage.setItem('nba_stat_period_v1', statPeriod); } catch (e) {}
+      renderBoard();
+    });
+
+    function statsPeriodDescription() {
+      return statPeriod === 'season' ? 'the current regular season'
+        : `the last ${statPeriod} regular-season appearances (or all available if fewer)`;
+    }
+
+    function setStatsStatus(message, period) {
+      if (period !== statPeriod) return;
+      const status = document.getElementById('stats-status');
+      status.textContent = message;
+      status.hidden = !message;
+    }
 
     // Desktop preferences do not hide statistics in the enlarged mobile view.
     const statVisibility = { usg: true, mpg: true };
@@ -908,7 +989,7 @@
 
     function savePlayerStatsCache() {
       try {
-        localStorage.setItem('nba_player_stats_cache_v1', JSON.stringify({ ts: Date.now(), data: PLAYER_STATS_CACHE }));
+        localStorage.setItem('nba_player_stats_cache_v2', JSON.stringify(PLAYER_STATS_BY_PERIOD));
       } catch (e) {}
     }
 
@@ -918,53 +999,80 @@
 
     // Fetch both statistics in batches of 20, using one upstream gamelog per player.
     let statsWorkerRunning = false;
+    let statsFetchController = null;
     async function hydrateAllPlayerStats() {
-      if (statsWorkerRunning) return;
+      // Switching periods cancels old batches before they can update the current view.
+      statsFetchController?.abort();
+      const controller = new AbortController();
+      statsFetchController = controller;
+      const period = statPeriod;
+      const periodCache = getPlayerStatsCache(period);
       statsWorkerRunning = true;
 
-      const queue = [];
-      for (const t of LEAGUE_DATA) {
-        for (const pos of ['PG', 'SG', 'SF', 'PF', 'C']) {
-          const players = t.depth[pos] || [];
-          players.forEach((p, idx) => {
-            const cached = PLAYER_STATS_CACHE[p.id];
-            if (p.id && (!Number.isFinite(cached?.usg) || !Number.isFinite(cached?.mpg))) {
-              queue.push({ id: p.id, priority: idx });
-            }
-          });
+      try {
+        const queue = [];
+        for (const t of LEAGUE_DATA) {
+          for (const pos of ['PG', 'SG', 'SF', 'PF', 'C']) {
+            const players = t.depth[pos] || [];
+            players.forEach((p, idx) => {
+              const cached = periodCache[p.id];
+              if (p.id && (!Number.isFinite(cached?.usg) || !Number.isFinite(cached?.mpg))) {
+                queue.push({ id: p.id, priority: idx });
+              }
+            });
+          }
+        }
+
+        queue.sort((a, b) => a.priority - b.priority);
+        const uniqueIds = [...new Set(queue.map(q => q.id))];
+        setStatsStatus(uniqueIds.length ? 'Loading stats…' : '', period);
+        let hadFailure = false;
+
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+          if (controller.signal.aborted) return;
+          const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+          try {
+            const res = await fetch(`${WORKER_URL}?usg=${batch.join(',')}&period=${period}&v=6`, {
+              signal: controller.signal
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (controller.signal.aborted) return;
+              // Older Workers only support 8 games. Never label their results as another period.
+              if (data.period !== period && !(period === '8' && data.period === undefined)) {
+                setStatsStatus('Selected period unavailable', period);
+                return;
+              }
+              for (const pid of batch) {
+                for (const metric of ['usg', 'mpg']) {
+                  const value = data[metric]?.[pid];
+                  // Missing or failed lookups stay retryable on the next sync.
+                  if (!Number.isFinite(value)) continue;
+                  periodCache[pid] = { ...periodCache[pid], [metric]: value };
+                  if (period !== statPeriod) continue;
+                  document.querySelectorAll(`.${metric}-slot-${pid}`).forEach(el => {
+                    el.textContent = formatPlayerStat(metric, value);
+                    el.hidden = false;
+                    el.parentElement.hidden = false;
+                  });
+                }
+              }
+              savePlayerStatsCache();
+            } else { hadFailure = true; }
+          } catch (e) {
+            if (controller.signal.aborted) return;
+            hadFailure = true;
+          }
+        }
+
+        setStatsStatus(hadFailure ? 'Some stats unavailable' : '', period);
+      } finally {
+        if (statsFetchController === controller) {
+          statsWorkerRunning = false;
+          statsFetchController = null;
         }
       }
-
-      queue.sort((a, b) => a.priority - b.priority);
-      const uniqueIds = [...new Set(queue.map(q => q.id))];
-
-      const BATCH_SIZE = 20;
-      for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
-        const batch = uniqueIds.slice(i, i + BATCH_SIZE);
-        try {
-          // Bypass browser/CDN responses cached before the Worker included MPG.
-          const res = await fetch(`${WORKER_URL}?usg=${batch.join(',')}&v=5`);
-          if (res.ok) {
-            const data = await res.json();
-            for (const pid of batch) {
-              for (const metric of ['usg', 'mpg']) {
-                const value = data[metric]?.[pid];
-                // Missing or failed lookups stay retryable on the next sync.
-                if (!Number.isFinite(value)) continue;
-                PLAYER_STATS_CACHE[pid] = { ...PLAYER_STATS_CACHE[pid], [metric]: value };
-                document.querySelectorAll(`.${metric}-slot-${pid}`).forEach(el => {
-                  el.textContent = formatPlayerStat(metric, value);
-                  el.hidden = false;
-                  el.parentElement.hidden = false;
-                });
-              }
-            }
-            savePlayerStatsCache();
-          }
-        } catch (e) {}
-      }
-
-      statsWorkerRunning = false;
     }
 
     function isUSUser() {
@@ -1153,8 +1261,8 @@
                     const hasMpg = Number.isFinite(cachedStats.mpg);
 
                     const tooltipParts = [`${pos}${slotIdx+1}: ${p.fullName}`];
-                    if (hasUsg) tooltipParts.push(`Last 8G USG: ${cachedStats.usg}%`);
-                    if (hasMpg) tooltipParts.push(`Last 8G MPG: ${cachedStats.mpg.toFixed(1)}`);
+                    if (hasUsg) tooltipParts.push(`${STAT_PERIOD_LABELS[statPeriod]} USG: ${cachedStats.usg}%`);
+                    if (hasMpg) tooltipParts.push(`${STAT_PERIOD_LABELS[statPeriod]} MPG: ${cachedStats.mpg.toFixed(1)}`);
                     if (p.injuryDetail) tooltipParts.push(p.injuryDetail);
 
                     const slotInjClass = p.injury ? `slot-inj-${p.injury}` : '';
@@ -1167,8 +1275,8 @@
                           <span class="m-last">${lastName}</span>
                         </span>
                         <span class="p-stats" ${hasUsg || hasMpg ? '' : 'hidden'}>
-                          <span class="p-usg usg-slot-${p.id}" title="USG% over the last 8 regular-season appearances" ${hasUsg ? '' : 'hidden'}>${hasUsg ? formatPlayerStat('usg', cachedStats.usg) : ''}</span>
-                          <span class="p-mpg mpg-slot-${p.id}" title="Minutes per game over the last 8 regular-season appearances" ${hasMpg ? '' : 'hidden'}>${hasMpg ? formatPlayerStat('mpg', cachedStats.mpg) : ''}</span>
+                          <span class="p-usg usg-slot-${p.id}" title="USG% over ${statsPeriodDescription()}" ${hasUsg ? '' : 'hidden'}>${hasUsg ? formatPlayerStat('usg', cachedStats.usg) : ''}</span>
+                          <span class="p-mpg mpg-slot-${p.id}" title="Minutes per game over ${statsPeriodDescription()}" ${hasMpg ? '' : 'hidden'}>${hasMpg ? formatPlayerStat('mpg', cachedStats.mpg) : ''}</span>
                         </span>
                         ${p.injury ? `<span class="inj ${injTextClass}">${p.injury}</span>` : ''}
                       </div>
@@ -1183,6 +1291,7 @@
     }
 
     function renderBoard() {
+      PLAYER_STATS_CACHE = getPlayerStatsCache();
       const westTeams = LEAGUE_DATA.filter(t => t.conf === 'WEST');
       const eastTeams = LEAGUE_DATA.filter(t => t.conf === 'EAST');
 

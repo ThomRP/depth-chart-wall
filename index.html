@@ -128,6 +128,12 @@
     flex-shrink: 0;
   }
   .injury-dialog-header h2 { font-size: 16px; line-height: 1.25; }
+  .injury-dialog-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+  .injury-period-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #334155; border-radius: 5px; background: #070a12; }
+  .injury-period-tab { border: 0; border-radius: 3px; padding: 3px 7px; background: transparent; color: #94a3b8; font-size: 10px; font-weight: 600; line-height: 14px; white-space: nowrap; cursor: pointer; }
+  .injury-period-tab:hover { color: #f8fafc; }
+  .injury-period-tab[aria-pressed="true"] { background: rgba(249, 115, 22, 0.2); color: #fed7aa; }
+  .injury-period-tab:focus-visible { outline: 2px solid #f97316; outline-offset: 1px; }
   .injury-dialog-header p { margin-top: 3px; color: #94a3b8; font-size: 10px; line-height: 1.4; }
   .injury-dialog-header .injury-swipe-hint { display: none; }
   .injury-close {
@@ -1066,7 +1072,15 @@
   <dialog class="injury-dialog" id="injury-dialog" aria-labelledby="injury-dialog-title" aria-describedby="injury-dialog-description">
     <div class="injury-dialog-header">
       <div>
-        <h2 id="injury-dialog-title">Out players</h2>
+        <div class="injury-dialog-heading">
+          <h2 id="injury-dialog-title">Out players</h2>
+          <div class="injury-period-tabs" role="group" aria-label="Injury statistics period">
+            <button type="button" class="injury-period-tab" data-period="season" aria-pressed="false">Season</button>
+            <button type="button" class="injury-period-tab" data-period="14" aria-pressed="false">Last 14 games</button>
+            <button type="button" class="injury-period-tab" data-period="8" aria-pressed="true">Last 8 games</button>
+          </div>
+          <span class="stats-status" id="injury-stats-status" role="status" hidden></span>
+        </div>
         <p id="injury-dialog-description"></p>
         <p class="injury-swipe-hint">Swipe across for all three lists.</p>
       </div>
@@ -1251,6 +1265,7 @@
 
     function renderInjuryList(resetScroll = false) {
       if (!activeInjuryGroup) return;
+      syncInjuryPeriodTabs();
       const list = document.getElementById('injury-list');
       const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.injury-player-button') : null;
       const focusedKey = focusedRow?.dataset.playerKey;
@@ -1377,10 +1392,28 @@
     let PLAYER_STATS_CACHE = getPlayerStatsCache();
     const periodSelect = document.getElementById('stats-period');
     periodSelect.value = statPeriod;
-    periodSelect.addEventListener('change', () => {
-      statPeriod = periodSelect.value;
+    syncInjuryPeriodTabs();
+
+    function syncInjuryPeriodTabs() {
+      document.querySelectorAll('.injury-period-tab').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.period === statPeriod));
+      });
+    }
+
+    function setStatsPeriod(period) {
+      if (!Object.hasOwn(STAT_PERIOD_LABELS, period) || period === statPeriod) return;
+      statPeriod = period;
+      periodSelect.value = period;
+      syncInjuryPeriodTabs();
       try { localStorage.setItem('nba_stat_period_v1', statPeriod); } catch (e) {}
+      // Show the leaders for the new period, keeping the current mobile column in view.
+      document.querySelectorAll('.injury-column-players').forEach(column => { column.scrollTop = 0; });
       renderBoard();
+    }
+
+    periodSelect.addEventListener('change', () => setStatsPeriod(periodSelect.value));
+    document.querySelectorAll('.injury-period-tab').forEach(button => {
+      button.addEventListener('click', () => setStatsPeriod(button.dataset.period));
     });
 
     function statsPeriodDescription() {
@@ -1390,9 +1423,11 @@
 
     function setStatsStatus(message, period) {
       if (period !== statPeriod) return;
-      const status = document.getElementById('stats-status');
-      status.textContent = message;
-      status.hidden = !message;
+      for (const id of ['stats-status', 'injury-stats-status']) {
+        const status = document.getElementById(id);
+        status.textContent = message;
+        status.hidden = !message;
+      }
     }
 
     // Desktop preferences do not hide statistics in the enlarged mobile view.

@@ -80,8 +80,8 @@ function parseEventForTeam(event, teamId) {
   };
 }
 
-// Compute USG% and MPG from the same last 8 regular-season appearances in one request.
-async function fetchSinglePlayerStats(pid, diagnostic = {}, debug = false) {
+// Compute USG% and MPG over the same regular-season appearances in one request.
+async function fetchSinglePlayerStats(pid, diagnostic = {}, debug = false, period = "8") {
   if (!pid) return null;
   try {
     const res = await fetch(GAMELOG_URL(pid), { cf: { cacheTtl: debug ? 0 : 3600 } });
@@ -142,9 +142,10 @@ async function fetchSinglePlayerStats(pid, diagnostic = {}, debug = false) {
     let totPoss = 0;
     let totMin = 0;
     let gamesCounted = 0;
+    const gamesLimit = period === "season" ? Infinity : Number(period);
 
     for (const stats of gameRows) {
-      if (gamesCounted >= 8) break;
+      if (gamesCounted >= gamesLimit) break;
       const minVal = parseFloat(stats[minIdx]) || 0;
       if (minVal <= 0) continue;
 
@@ -205,8 +206,16 @@ export default {
     // Stays under 25 subrequests per call so Cloudflare's 50-subrequest limit is never exceeded
     if (usgParam) {
       const debug = reqUrl.searchParams.get("debug") === "1";
+      // Default to 8 games for existing callers; keep every period's cache separate.
+      const period = reqUrl.searchParams.get("period") || "8";
+      if (!["8", "14", "season"].includes(period)) {
+        return new Response(JSON.stringify({ error: "period must be 8, 14, or season" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Cache-Control": "no-store" }
+        });
+      }
       const ids = usgParam.split(",").map(s => s.trim()).filter(Boolean).slice(0, 25);
-      const batchCacheKey = new Request(`https://cache.internal/usg-mpg-v5/${ids.join(",")}`, request);
+      const batchCacheKey = new Request(`https://cache.internal/usg-mpg-v6/${period}/${ids.join(",")}`, request);
       const cache = caches.default;
 
       let cachedBatch = debug ? null : await cache.match(batchCacheKey);
@@ -216,8 +225,8 @@ export default {
       const mpgResults = {};
       const diagnostics = {};
       await Promise.all(ids.map(async (id) => {
-        diagnostics[id] = {};
-        const stats = await fetchSinglePlayerStats(id, diagnostics[id], debug);
+        diagnostics[id] = { period };
+        const stats = await fetchSinglePlayerStats(id, diagnostics[id], debug, period);
         results[id] = stats?.usg ?? null;
         mpgResults[id] = stats?.mpg ?? null;
       }));
@@ -225,7 +234,7 @@ export default {
       // Failed or unavailable lookups must be retried, not cached as null for 30 minutes.
       const cacheable = !debug && Object.values(results).every(value => value !== null)
         && Object.values(mpgResults).every(value => value !== null);
-      const usgResp = new Response(JSON.stringify({ usg: results, mpg: mpgResults, ...(debug ? { diagnostics } : {}) }), {
+      const usgResp = new Response(JSON.stringify({ period, usg: results, mpg: mpgResults, ...(debug ? { diagnostics } : {}) }), {
         headers: {
           ...corsHeaders,
           "Cache-Control": cacheable ? "public, max-age=1800, s-maxage=1800" : "no-store"

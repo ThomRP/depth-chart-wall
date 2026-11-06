@@ -102,7 +102,7 @@
   }
 
   .injury-dialog {
-    width: min(1760px, calc(100vw - 24px));
+    width: min(760px, calc(100vw - 24px));
     max-width: calc(100vw - 24px);
     height: min(820px, calc(100vh - 24px));
     height: min(820px, calc(100dvh - 24px));
@@ -135,7 +135,6 @@
   .injury-period-tab[aria-pressed="true"] { background: rgba(249, 115, 22, 0.2); color: #fed7aa; }
   .injury-period-tab:focus-visible { outline: 2px solid #f97316; outline-offset: 1px; }
   .injury-dialog-header p { margin-top: 3px; color: #94a3b8; font-size: 10px; line-height: 1.4; }
-  .injury-dialog-header .injury-swipe-hint { display: none; }
   .injury-close {
     margin-left: auto;
     width: 28px;
@@ -149,44 +148,14 @@
     cursor: pointer;
   }
   .injury-list {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
     padding: 8px;
     flex: 1;
-    overflow: hidden;
     min-height: 0;
-  }
-  .injury-column {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-    border: 1px solid #263247;
-    border-radius: 6px;
-  }
-  .injury-column-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background: #162033;
-    border-bottom: 1px solid #263247;
-    flex-shrink: 0;
-  }
-  .injury-column-header h3 { font-size: 12px; font-weight: 700; }
-  .injury-column-detail { font-size: 9px; color: #94a3b8; }
-  .injury-column-count { margin-left: auto; font-size: 11px; font-weight: 700; color: #94a3b8; }
-  .injury-column-players {
-    flex: 1;
-    min-height: 0;
-    padding: 5px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
   }
-  .injury-column-players:focus-visible { outline: 1px solid #f97316; outline-offset: -1px; }
+  .injury-list:focus-visible { outline: 1px solid #f97316; outline-offset: -1px; }
   .injury-player-button {
     width: 100%;
     display: grid;
@@ -756,9 +725,6 @@
     .injury-summary { padding: 2px 7px; }
     .injury-summary strong { font-size: 11px; }
     .injury-dialog { width: calc(100vw - 16px); max-width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
-    .injury-list { grid-template-columns: repeat(3, minmax(228px, 1fr)); overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 8px; }
-    .injury-column { scroll-snap-align: start; }
-    .injury-dialog-header .injury-swipe-hint { display: block; color: #cbd5e1; }
 
     .controls {
       width: 100%;
@@ -1082,11 +1048,10 @@
           <span class="stats-status" id="injury-stats-status" role="status" hidden></span>
         </div>
         <p id="injury-dialog-description"></p>
-        <p class="injury-swipe-hint">Swipe across for all three lists.</p>
       </div>
       <button type="button" class="injury-close" aria-label="Close player list" autofocus>×</button>
     </div>
-    <div class="injury-list" id="injury-list"></div>
+    <div class="injury-list" id="injury-list" tabindex="0" role="region" aria-label="Injury players"></div>
   </dialog>
 
   <div class="board" id="board">
@@ -1103,11 +1068,6 @@
   <script>
     const WORKER_URL = "https://ancient-haze-faf8.thomrisped.workers.dev";
     const STAT_PERIOD_LABELS = { season: 'Season', '14': 'Last 14 games', '8': 'Last 8 games' };
-    const INJURY_STRINGS = [
-      { key: 'first', label: '1st string' },
-      { key: 'second', label: '2nd string' },
-      { key: 'rest', label: 'Rest', detail: '3rd–5th' }
-    ];
     const STATS_CACHE_TTL = 30 * 60 * 1000;
     const PLAYER_JUMP_HIGHLIGHT_MS = 1600;
 
@@ -1162,7 +1122,7 @@
             const status = getInjuryStatus(player);
             const previous = uniquePlayers.get(key);
             const priority = group => group === 'out' ? 2 : group === 'dtd' ? 1 : 0;
-            // Count each player once and use their highest string across positions.
+            // Count each player once and link to their highest-listed chart position.
             if (!previous) {
               uniquePlayers.set(key, { key, player, team, position, status, depthIndex });
             } else {
@@ -1202,10 +1162,6 @@
       return Number.isFinite(stats?.mpg) && Number.isFinite(stats?.usg) ? stats.mpg ** 2 * stats.usg : -1;
     }
 
-    function injuryStringKey(entry) {
-      return entry.depthIndex === 0 ? 'first' : entry.depthIndex === 1 ? 'second' : 'rest';
-    }
-
     function sortedInjuryPlayers() {
       return injuryPlayers.filter(entry => entry.status.group === activeInjuryGroup)
         .sort((a, b) => injuryImpactScore(b) - injuryImpactScore(a)
@@ -1222,25 +1178,15 @@
           value.textContent = injuryStatValue(value.dataset.metric, row.dataset.playerId);
         });
       });
-      // Rank each string independently while preserving its scroll and focused player.
+      // Rank everyone together, preserving the focused player and scroll as stats arrive.
       const rowsByKey = new Map(rows.map(row => [row.dataset.playerKey, row]));
-      const players = sortedInjuryPlayers();
-      const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.injury-player-button') : null;
-      const columns = [...list.querySelectorAll('.injury-column-players')];
-      const scrollTops = columns.map(column => column.scrollTop);
-      let orderChanged = false;
-      columns.forEach(column => {
-        const currentRows = [...column.querySelectorAll('.injury-player-button')];
-        const orderedRows = players.filter(entry => injuryStringKey(entry) === column.dataset.string)
-          .map(entry => rowsByKey.get(entry.key)).filter(Boolean);
-        if (orderedRows.some((row, index) => row !== currentRows[index])) {
-          column.append(...orderedRows);
-          orderChanged = true;
-        }
-      });
-      if (orderChanged) {
+      const orderedRows = sortedInjuryPlayers().map(entry => rowsByKey.get(entry.key)).filter(Boolean);
+      if (orderedRows.some((row, index) => row !== rows[index])) {
+        const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.injury-player-button') : null;
+        const scrollTop = list.scrollTop;
+        list.append(...orderedRows);
         focusedRow?.focus({ preventScroll: true });
-        columns.forEach((column, index) => { column.scrollTop = scrollTops[index]; });
+        list.scrollTop = scrollTop;
       }
     }
 
@@ -1269,41 +1215,21 @@
       const list = document.getElementById('injury-list');
       const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.injury-player-button') : null;
       const focusedKey = focusedRow?.dataset.playerKey;
-      const focusedString = document.activeElement.classList.contains('injury-column-players') ? document.activeElement.dataset.string : null;
-      const scrollLeft = resetScroll ? 0 : list.scrollLeft;
-      const scrollTops = new Map([...list.querySelectorAll('.injury-column-players')]
-        .map(column => [column.dataset.string, resetScroll ? 0 : column.scrollTop]));
+      const scrollTop = resetScroll ? 0 : list.scrollTop;
       const players = sortedInjuryPlayers();
       document.getElementById('injury-dialog-title').textContent = activeInjuryGroup === 'out' ? 'Out players' : 'DTD players';
+      list.setAttribute('aria-label', activeInjuryGroup === 'out' ? 'Out players' : 'DTD players');
       document.getElementById('injury-dialog-description').textContent =
-        `${players.length} of ${injuryPlayers.length} players · ${STAT_PERIOD_LABELS[statPeriod]} · Each string ranked by MPG² × USG, highest first. `
+        `${players.length} of ${injuryPlayers.length} players · ${STAT_PERIOD_LABELS[statPeriod]} · Ranked by MPG² × USG, highest first. `
         + (activeInjuryGroup === 'dtd' ? 'Q / D / P / DTD. ' : '')
         + 'Select a player to open their team.';
-      list.innerHTML = INJURY_STRINGS.map(({ key, label, detail }) => {
-        const columnPlayers = players.filter(entry => injuryStringKey(entry) === key);
-        return `
-          <section class="injury-column" data-string="${key}" aria-labelledby="injury-heading-${key}">
-            <div class="injury-column-header">
-              <h3 id="injury-heading-${key}">${label}</h3>
-              ${detail ? `<span class="injury-column-detail">${detail}</span>` : ''}
-              <span class="injury-column-count">${columnPlayers.length}</span>
-            </div>
-            <div class="injury-column-players" data-string="${key}" tabindex="0" role="region" aria-label="${label} players">
-              ${columnPlayers.length ? columnPlayers.map(buildInjuryPlayerHTML).join('') : '<p class="injury-empty">No players in this string.</p>'}
-            </div>
-          </section>
-        `;
-      }).join('');
+      list.innerHTML = players.length ? players.map(buildInjuryPlayerHTML).join('')
+        : `<p class="injury-empty">No ${activeInjuryGroup === 'out' ? 'Out' : 'DTD'} players in the displayed depth charts.</p>`;
       if (focusedKey) {
         const next = [...list.querySelectorAll('.injury-player-button')].find(row => row.dataset.playerKey === focusedKey);
         (next || document.querySelector('.injury-close')).focus({ preventScroll: true });
-      } else if (focusedString) {
-        list.querySelector(`.injury-column-players[data-string="${focusedString}"]`)?.focus({ preventScroll: true });
       }
-      list.querySelectorAll('.injury-column-players').forEach(column => {
-        column.scrollTop = scrollTops.get(column.dataset.string) || 0;
-      });
-      list.scrollLeft = scrollLeft;
+      list.scrollTop = scrollTop;
     }
 
     function openInjuryDialog(group) {
@@ -1312,7 +1238,7 @@
       activeInjuryGroup = group;
       renderInjuryList(true);
       document.getElementById('injury-dialog').showModal();
-      document.getElementById('injury-list').scrollLeft = 0;
+      document.getElementById('injury-list').scrollTop = 0;
     }
 
     function closeInjuryDialog() {
@@ -1406,8 +1332,8 @@
       periodSelect.value = period;
       syncInjuryPeriodTabs();
       try { localStorage.setItem('nba_stat_period_v1', statPeriod); } catch (e) {}
-      // Show the leaders for the new period, keeping the current mobile column in view.
-      document.querySelectorAll('.injury-column-players').forEach(column => { column.scrollTop = 0; });
+      // Show the leaders for the new period.
+      document.getElementById('injury-list').scrollTop = 0;
       renderBoard();
     }
 

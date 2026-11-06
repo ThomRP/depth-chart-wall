@@ -201,7 +201,9 @@
   .injury-player-button:hover { background: #19273e; border-color: #64748b; }
   .injury-player-info { min-width: 0; }
   .injury-player-name { display: block; font-size: 12px; line-height: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .injury-player-team { display: block; color: #94a3b8; font-size: 9px; line-height: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .injury-player-team { display: flex; align-items: center; gap: 4px; height: 16px; color: #94a3b8; font-size: 9px; line-height: 10px; white-space: nowrap; }
+  .injury-team-logo { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
+  .injury-player-team-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .injury-status { font-size: 8px; font-weight: 800; text-align: center; }
   .injury-status-out { color: #fca5a5; }
   .injury-status-dtd { color: #fde047; }
@@ -1233,7 +1235,10 @@
         <button type="button" class="injury-player-button" data-player-key="${escapeHTML(entry.key)}" data-player-id="${escapeHTML(entry.player.id || '')}" data-team-abbr="${escapeHTML(entry.team.abbr)}" title="${escapeHTML([entry.player.fullName || entry.player.shortName, entry.team.team, entry.player.injuryDetail || entry.status.name].join(' · '))}">
           <span class="injury-player-info">
             <span class="injury-player-name">${escapeHTML(entry.player.fullName || entry.player.shortName)}</span>
-            <span class="injury-player-team">${escapeHTML(entry.team.abbr)} · ${escapeHTML(entry.position)}</span>
+            <span class="injury-player-team">
+              ${entry.team.logo ? `<img class="injury-team-logo" src="${escapeHTML(entry.team.logo)}" alt="" width="16" height="16" decoding="async" onerror="this.hidden=true">` : ''}
+              <span class="injury-player-team-text">${escapeHTML(entry.team.abbr)} · ${escapeHTML(entry.position)}</span>
+            </span>
           </span>
           <span class="injury-player-stats">
             <span class="injury-stat"><span class="injury-stat-label">USG</span><span class="injury-stat-value" data-metric="usg">${injuryStatValue('usg', entry.player.id)}</span></span>

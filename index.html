@@ -78,6 +78,105 @@
     gap: 8px;
   }
 
+  .injury-summaries { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .injury-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid;
+    border-radius: 5px;
+    font-size: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .injury-summary strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .injury-summary span { font-size: 9px; font-weight: 800; text-transform: uppercase; }
+  .summary-out { background: rgba(239, 68, 68, 0.1); border-color: #7f3038; color: #fca5a5; }
+  .summary-dtd { background: rgba(234, 179, 8, 0.08); border-color: #68551e; color: #fde047; }
+  .injury-summary:hover:not(:disabled) { filter: brightness(1.3); }
+  .injury-summary:disabled { opacity: 0.5; cursor: default; }
+  .injury-summary:focus-visible, .injury-player-button:focus-visible, .injury-close:focus-visible {
+    outline: 2px solid #f97316;
+    outline-offset: 2px;
+  }
+
+  .injury-dialog {
+    width: min(760px, calc(100vw - 24px));
+    max-height: 80vh;
+    max-height: 80dvh;
+    margin: auto;
+    padding: 0;
+    color: #f1f5f9;
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 10px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+    overflow: hidden;
+  }
+  .injury-dialog[open] { display: flex; flex-direction: column; }
+  .injury-dialog::backdrop { background: rgba(5, 8, 15, 0.78); backdrop-filter: blur(3px); }
+  .injury-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid #334155;
+    flex-shrink: 0;
+  }
+  .injury-dialog-header h2 { font-size: 18px; line-height: 1.3; }
+  .injury-dialog-header p { margin-top: 5px; color: #94a3b8; font-size: 11px; line-height: 1.5; }
+  .injury-close {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    background: #1e293b;
+    color: #cbd5e1;
+    font-size: 20px;
+    cursor: pointer;
+  }
+  .injury-list { padding: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+  .injury-player-button {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 42px 70px 70px 14px;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    margin-bottom: 5px;
+    border: 1px solid #263247;
+    border-radius: 6px;
+    background: #111c2f;
+    color: #f1f5f9;
+    text-align: left;
+    cursor: pointer;
+  }
+  .injury-player-button:last-child { margin-bottom: 0; }
+  .injury-player-button:hover { background: #19273e; border-color: #64748b; }
+  .injury-player-info { min-width: 0; }
+  .injury-player-name { display: block; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+  .injury-player-team { display: block; margin-top: 3px; color: #94a3b8; font-size: 10px; }
+  .injury-status { font-size: 10px; font-weight: 800; text-align: center; }
+  .injury-status-out { color: #fca5a5; }
+  .injury-status-dtd { color: #fde047; }
+  .injury-stat { text-align: right; font-variant-numeric: tabular-nums; }
+  .injury-stat-label { display: block; font-size: 9px; color: #94a3b8; }
+  .injury-stat-value { display: block; margin-top: 2px; font-size: 13px; font-weight: 700; }
+  .injury-player-arrow { color: #64748b; text-align: right; }
+  .injury-empty { padding: 28px 12px; text-align: center; color: #94a3b8; font-size: 13px; }
+
+  .p-name.player-jump-highlight { border-radius: 2px; animation: playerJumpHighlight 1.6s ease-out both; }
+  @keyframes playerJumpHighlight {
+    0%, 20% { box-shadow: inset 0 0 0 1px #fbbf24; background: rgba(251, 191, 36, 0.35); color: #fff; }
+    100% { box-shadow: inset 0 0 0 1px transparent; background: transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .p-name.player-jump-highlight { animation: none; box-shadow: inset 0 0 0 1px #fbbf24; background: rgba(251, 191, 36, 0.2); }
+  }
+
   .stat-toggles { display: none; }
 
   .stat-period-control {
@@ -562,6 +661,11 @@
     }
   }
 
+  @media (min-width: 769px) and (max-height: 800px) {
+    .card:not(.active) .pos-row { padding: 0; }
+    .card:not(.active) .card-header { height: 22px; }
+  }
+
   /* =========================================================
      MOBILE VIEW (Phones & Small Screens <= 768px)
      ========================================================= */
@@ -600,6 +704,15 @@
       font-size: 7px;
       padding: 0 3px;
     }
+
+    .injury-summary { padding: 2px 7px; }
+    .injury-summary strong { font-size: 11px; }
+    .injury-dialog { width: calc(100vw - 16px); max-height: 85dvh; }
+    .injury-dialog-header { padding: 12px; }
+    .injury-dialog-header h2 { font-size: 16px; }
+    .injury-player-button { grid-template-columns: minmax(0, 1fr) 28px 46px 46px 10px; gap: 6px; padding: 9px 7px; }
+    .injury-player-name { font-size: 12px; }
+    .injury-stat-value { font-size: 12px; }
 
     .controls {
       width: 100%;
@@ -873,6 +986,14 @@
         <span class="legend-pill slot-inj-P"><span class="inj inj-P">P</span> Prob</span>
       </div>
     </div>
+    <div class="injury-summaries" role="group" aria-label="Injury summaries">
+      <button type="button" class="injury-summary summary-out" id="injury-summary-out" aria-haspopup="dialog" aria-controls="injury-dialog" title="Out players across all five strings" disabled>
+        <strong>—/—</strong><span>Out</span>
+      </button>
+      <button type="button" class="injury-summary summary-dtd" id="injury-summary-dtd" aria-haspopup="dialog" aria-controls="injury-dialog" title="DTD includes questionable, doubtful and probable players" disabled>
+        <strong>—/—</strong><span>DTD</span>
+      </button>
+    </div>
     <div class="controls">
       <div class="mobile-tabs">
         <button class="m-tab active-west" id="tab-west" onclick="scrollToConf('WEST')">WEST ◀</button>
@@ -902,6 +1023,17 @@
 
   <div id="backdrop" onclick="closeActiveCard()"></div>
 
+  <dialog class="injury-dialog" id="injury-dialog" aria-labelledby="injury-dialog-title" aria-describedby="injury-dialog-description">
+    <div class="injury-dialog-header">
+      <div>
+        <h2 id="injury-dialog-title">Out players</h2>
+        <p id="injury-dialog-description"></p>
+      </div>
+      <button type="button" class="injury-close" aria-label="Close player list" autofocus>×</button>
+    </div>
+    <div class="injury-list" id="injury-list"></div>
+  </dialog>
+
   <div class="board" id="board">
     <div class="conf-box west" id="box-west">
       <span class="conf-label">Western Conference</span>
@@ -923,6 +1055,174 @@
     const PLAYER_STATS_BY_PERIOD = {};
     let activeCardId = null;
     let activeConf = null;
+    let injuryPlayers = [];
+    let activeInjuryGroup = null;
+    let playerJumpTarget = null;
+    let playerJumpTimer = null;
+
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[character]);
+    }
+
+    function getPlayerKey(player) {
+      const name = [player.fullName, player.shortName].find(value => value && value.trim() && value.trim() !== '-');
+      if (!name) return '';
+      const id = String(player.id || '').trim();
+      return id ? `id:${id}` : `name:${name.trim().replace(/\s+/g, ' ').toLowerCase()}`;
+    }
+
+    function getInjuryStatus(player) {
+      const codes = [player.injury, player.injuryCode].map(value => String(value || '').trim().toUpperCase());
+      if (codes.some(code => ['O', 'OUT'].includes(code))) return { group: 'out', label: 'O', name: 'Out' };
+      const statuses = {
+        Q: ['Q', 'Questionable'], QUESTIONABLE: ['Q', 'Questionable'],
+        D: ['D', 'Doubtful'], DOUBTFUL: ['D', 'Doubtful'],
+        P: ['P', 'Probable'], PROBABLE: ['P', 'Probable'],
+        DTD: ['DTD', 'Day-to-day'], 'DAY-TO-DAY': ['DTD', 'Day-to-day']
+      };
+      for (const code of codes) {
+        if (Object.hasOwn(statuses, code)) {
+          const [label, name] = statuses[code];
+          return { group: 'dtd', label, name };
+        }
+      }
+      return { group: '', label: '', name: '' };
+    }
+
+    function updateInjurySummaries() {
+      const uniquePlayers = new Map();
+      for (const team of LEAGUE_DATA) {
+        for (const position of ['PG', 'SG', 'SF', 'PF', 'C']) {
+          (team.depth[position] || []).slice(0, 5).forEach(player => {
+            const key = getPlayerKey(player);
+            if (!key) return;
+            const status = getInjuryStatus(player);
+            const previous = uniquePlayers.get(key);
+            const priority = group => group === 'out' ? 2 : group === 'dtd' ? 1 : 0;
+            // The same player can appear at several positions; count them once.
+            if (!previous || priority(status.group) > priority(previous.status.group)) {
+              uniquePlayers.set(key, { key, player, team, position, status });
+            }
+          });
+        }
+      }
+      injuryPlayers = [...uniquePlayers.values()];
+      for (const group of ['out', 'dtd']) {
+        const count = injuryPlayers.filter(entry => entry.status.group === group).length;
+        const button = document.getElementById(`injury-summary-${group}`);
+        button.querySelector('strong').textContent = `${count}/${injuryPlayers.length}`;
+        button.dataset.count = count;
+        button.dataset.total = injuryPlayers.length;
+        button.setAttribute('aria-label', `${count} of ${injuryPlayers.length} players ${group === 'out' ? 'Out' : 'DTD, questionable, doubtful or probable'}`);
+        button.disabled = LEAGUE_DATA.length === 0;
+      }
+      if (document.getElementById('injury-dialog').open) renderInjuryList();
+    }
+
+    function injuryStatValue(metric, playerId) {
+      const value = PLAYER_STATS_CACHE[playerId]?.[metric];
+      return Number.isFinite(value) ? (metric === 'usg' ? `${value}%` : value.toFixed(1)) : '—';
+    }
+
+    function updateInjuryListStats() {
+      if (!document.getElementById('injury-dialog').open) return;
+      document.querySelectorAll('#injury-list .injury-player-button').forEach(row => {
+        row.querySelectorAll('.injury-stat-value').forEach(value => {
+          value.textContent = injuryStatValue(value.dataset.metric, row.dataset.playerId);
+        });
+      });
+    }
+
+    function renderInjuryList() {
+      if (!activeInjuryGroup) return;
+      const list = document.getElementById('injury-list');
+      const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.injury-player-button') : null;
+      const focusedKey = focusedRow?.dataset.playerKey;
+      const scrollTop = list.scrollTop;
+      const players = injuryPlayers.filter(entry => entry.status.group === activeInjuryGroup)
+        .sort((a, b) => (a.player.fullName || a.player.shortName).localeCompare(b.player.fullName || b.player.shortName));
+      document.getElementById('injury-dialog-title').textContent = activeInjuryGroup === 'out' ? 'Out players' : 'DTD players';
+      document.getElementById('injury-dialog-description').textContent =
+        `${players.length} of ${injuryPlayers.length} unique players across all five strings · ${STAT_PERIOD_LABELS[statPeriod]}. `
+        + (activeInjuryGroup === 'dtd' ? 'Includes Q, D, P and DTD. ' : '')
+        + 'Select a player to open their team.';
+      list.innerHTML = players.length ? players.map(entry => `
+        <button type="button" class="injury-player-button" data-player-key="${escapeHTML(entry.key)}" data-player-id="${escapeHTML(entry.player.id || '')}" data-team-abbr="${escapeHTML(entry.team.abbr)}" title="${escapeHTML(entry.player.injuryDetail || entry.status.name)}">
+          <span class="injury-player-info">
+            <span class="injury-player-name">${escapeHTML(entry.player.fullName || entry.player.shortName)}</span>
+            <span class="injury-player-team">${escapeHTML(entry.team.team)} · ${escapeHTML(entry.position)}</span>
+          </span>
+          <span class="injury-status injury-status-${entry.status.group}" title="${entry.status.name}">${entry.status.label}</span>
+          <span class="injury-stat"><span class="injury-stat-label">USG</span><span class="injury-stat-value" data-metric="usg">${injuryStatValue('usg', entry.player.id)}</span></span>
+          <span class="injury-stat"><span class="injury-stat-label">MPG</span><span class="injury-stat-value" data-metric="mpg">${injuryStatValue('mpg', entry.player.id)}</span></span>
+          <span class="injury-player-arrow" aria-hidden="true">→</span>
+        </button>
+      `).join('') : `<p class="injury-empty">No ${activeInjuryGroup === 'out' ? 'Out' : 'DTD'} players in the displayed depth charts.</p>`;
+      if (focusedKey) {
+        const next = [...list.querySelectorAll('.injury-player-button')].find(row => row.dataset.playerKey === focusedKey);
+        (next || document.querySelector('.injury-close')).focus({ preventScroll: true });
+      }
+      list.scrollTop = scrollTop;
+    }
+
+    function openInjuryDialog(group) {
+      if (!['out', 'dtd'].includes(group)) return;
+      closeActiveCard();
+      activeInjuryGroup = group;
+      renderInjuryList();
+      document.getElementById('injury-dialog').showModal();
+    }
+
+    function closeInjuryDialog() {
+      document.getElementById('injury-dialog').close();
+      activeInjuryGroup = null;
+    }
+
+    function clearPlayerJumpHighlight() {
+      clearTimeout(playerJumpTimer);
+      playerJumpTarget = null;
+      document.querySelectorAll('.player-jump-highlight').forEach(name => name.classList.remove('player-jump-highlight'));
+    }
+
+    function openInjuryPlayer(key, teamAbbr) {
+      const entry = injuryPlayers.find(player => player.key === key && player.team.abbr === teamAbbr);
+      if (!entry) return;
+      closeInjuryDialog();
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        const board = document.getElementById('board');
+        const box = document.getElementById(`box-${entry.team.conf.toLowerCase()}`);
+        board.scrollLeft += box.getBoundingClientRect().left - board.getBoundingClientRect().left;
+      }
+      const cardId = `card-${entry.team.abbr}`;
+      if (!openCard(cardId, entry.team.conf)) return;
+      clearPlayerJumpHighlight();
+      playerJumpTarget = { key, teamAbbr, expiresAt: Date.now() + 1600 };
+      const card = document.getElementById(cardId);
+      void card.offsetWidth;
+      card.querySelectorAll('.p-name[data-player-key]').forEach(name => {
+        if (name.dataset.playerKey === key) name.classList.add('player-jump-highlight');
+      });
+      card.focus({ preventScroll: true });
+      playerJumpTimer = setTimeout(clearPlayerJumpHighlight, 1600);
+    }
+
+    for (const group of ['out', 'dtd']) {
+      document.getElementById(`injury-summary-${group}`).addEventListener('click', () => openInjuryDialog(group));
+    }
+    const injuryDialog = document.getElementById('injury-dialog');
+    injuryDialog.querySelector('.injury-close').addEventListener('click', closeInjuryDialog);
+    injuryDialog.addEventListener('close', () => { if (!injuryDialog.open) activeInjuryGroup = null; });
+    injuryDialog.addEventListener('click', event => {
+      if (event.target !== injuryDialog) return;
+      const rect = injuryDialog.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeInjuryDialog();
+    });
+    document.getElementById('injury-list').addEventListener('click', event => {
+      const row = event.target.closest('.injury-player-button');
+      if (row) openInjuryPlayer(row.dataset.playerKey, row.dataset.teamAbbr);
+    });
 
     // A cache entry belongs to one period and expires independently of the others.
     try {
@@ -1059,6 +1359,7 @@
                 }
               }
               savePlayerStatsCache();
+              if (period === statPeriod) updateInjuryListStats();
             } else { hadFailure = true; }
           } catch (e) {
             if (controller.signal.aborted) return;
@@ -1189,13 +1490,16 @@
 
     function toggleCard(cardId, conf, event) {
       event.stopPropagation();
-      const backdrop = document.getElementById('backdrop');
-
       if (activeCardId === cardId) {
         closeActiveCard();
         return;
       }
+      openCard(cardId, conf);
+    }
 
+    function openCard(cardId, conf) {
+      const card = document.getElementById(cardId);
+      if (!card) return false;
       if (activeCardId !== null) {
         const prev = document.getElementById(activeCardId);
         if (prev) prev.classList.remove('active');
@@ -1203,15 +1507,17 @@
 
       activeCardId = cardId;
       activeConf = conf;
-      document.getElementById(cardId).classList.add('active');
+      card.classList.add('active');
       
       document.getElementById('box-west').style.zIndex = conf === 'WEST' ? '60' : '1';
       document.getElementById('box-east').style.zIndex = conf === 'EAST' ? '60' : '1';
       
-      backdrop.classList.add('visible');
+      document.getElementById('backdrop').classList.add('visible');
+      return true;
     }
 
     function closeActiveCard() {
+      clearPlayerJumpHighlight();
       if (activeCardId !== null) {
         const card = document.getElementById(activeCardId);
         if (card) card.classList.remove('active');
@@ -1224,7 +1530,7 @@
     }
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeActiveCard();
+      if (e.key === 'Escape' && !injuryDialog.open) closeActiveCard();
     });
 
     function buildCardHTML(t, localIdx) {
@@ -1233,7 +1539,7 @@
       const isActive = activeCardId === cardId ? 'active' : '';
       const gameBadgeHTML = formatGameBadge(t.game);
       return `
-        <div class="card ${isActive}" id="${cardId}" 
+        <div class="card ${isActive}" id="${cardId}" tabindex="-1"
              onclick="toggleCard('${cardId}', '${t.conf}', event)"
              style="border-top: 2px solid ${t.color}; transform-origin: ${origin};">
           <div class="card-header">
@@ -1255,6 +1561,9 @@
                     const p = players[slotIdx] || {id: '', shortName: '-', fullName: '-', injury: '', injuryDetail: ''};
                     const deepClass = slotIdx >= 3 ? 'slot-deep' : '';
                     const hasPlayer = p.shortName && p.shortName !== '-';
+                    const playerKey = getPlayerKey(p);
+                    const jumpClass = playerJumpTarget?.key === playerKey && playerJumpTarget.teamAbbr === t.abbr
+                      && playerJumpTarget.expiresAt > Date.now() ? 'player-jump-highlight' : '';
                     const lastName = getLastName(p.shortName);
                     const cachedStats = PLAYER_STATS_CACHE[p.id] || {};
                     const hasUsg = Number.isFinite(cachedStats.usg);
@@ -1270,7 +1579,7 @@
                     return `
                       <div class="slot ${deepClass} ${slotInjClass}" title="${tooltipParts.join(' — ')}">
                         ${hasPlayer ? `<span class="s-num">${slotIdx + 1}</span>` : ''}
-                        <span class="p-name">
+                        <span class="p-name ${jumpClass}" data-player-key="${escapeHTML(playerKey)}">
                           <span class="d-short">${p.shortName}</span>
                           <span class="m-last">${lastName}</span>
                         </span>
@@ -1297,6 +1606,7 @@
 
       document.getElementById('grid-west').innerHTML = westTeams.map((t, i) => buildCardHTML(t, i)).join('');
       document.getElementById('grid-east').innerHTML = eastTeams.map((t, i) => buildCardHTML(t, i)).join('');
+      updateInjurySummaries();
       filterCards();
       hydrateAllPlayerStats();
     }

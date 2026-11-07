@@ -23,15 +23,20 @@
     return input ? clean(input.value) : '';
   };
 
-  // Only read rendered tables and selected labels. This script never fetches URLs,
-  // reads cookies, or reads login/password fields.
+  // Read rendered tables, selected labels, and whitelisted scoring controls only.
+  // Never fetch URLs, read cookies, or read login/password fields.
   const selectedControls = [...document.querySelectorAll('select')]
     .filter(visible)
     .map(select => ({
       name: select.id || select.name || 'select',
       selected: clean(select.selectedOptions[0]?.textContent),
+      value: clean(select.value),
       options: [...select.options].map(option => clean(option.textContent))
     }));
+  const sourceControl = selectedControls.find(control => /DDDURATION$/i.test(control.name)) ||
+    selectedControls.find(control => control.options.some(option => /projections?/i.test(option)) &&
+      control.options.some(option => /regular season rankings|last\s+\d+\s+days/i.test(option)));
+  const selectedSource = sourceControl?.selected || '';
   const perGame = /per[\s-]*game|per[\s-]*g\b|averages?/i;
   const total = /\btotals?\b/i;
   const basisControl = selectedControls.find(control =>
@@ -40,9 +45,10 @@
   if (basisControl && total.test(basisControl.selected) && !perGame.test(basisControl.selected)) {
     throw new Error('Select per-game averages on Hashtag, let the table refresh, then run the exporter again. Totals cannot be compared directly with per-game projections.');
   }
-  const blendControl = selectedControls.find(control => /\bblend\b/i.test(control.selected));
-  if (blendControl) {
-    throw new Error(`Selected source is "${blendControl.selected}". Select pure rest-of-season projections rather than a BLEND source, then export again.`);
+  const blendedSource = (sourceControl ? [sourceControl] : selectedControls)
+    .find(control => /\b(?:BLEND|STREAM)\s*\d*/i.test(control.selected));
+  if (blendedSource) {
+    throw new Error(`Selected source is "${blendedSource.selected}". Select pure rest-of-season projections rather than a BLEND or STREAM source, then export again.`);
   }
   const basis = (basisControl && perGame.test(basisControl.selected) && !total.test(basisControl.selected)) ||
     selectedControls.some(control => /per[\s-]*game/i.test(control.selected) && !total.test(control.selected))
@@ -133,16 +139,57 @@
   }
   if (!players.length) throw new Error('The visible table contained no readable player rows.');
 
-  const kind = /projections?/i.test(location.pathname) ? 'projections' : 'current';
-  const selectedSources = selectedControls.map(({ name, selected }) => ({ name, selected }));
-  const rosControl = selectedControls.find(control => /rest[\s-]*of[\s-]*season|\bROS\b/i.test(control.selected));
+  const kind = /projections?/i.test(selectedSource) ? 'projections'
+    : /rankings|regular season|last\s+\d+\s+(?:days|games)/i.test(selectedSource) ? 'current'
+    : /projections?/i.test(location.pathname) ? 'projections' : 'current';
+  const selectedSources = selectedControls.map(({ name, selected, value }) => ({ name, selected, value }));
+  const rosControl = (sourceControl ? [sourceControl] : selectedControls)
+    .find(control => /rest[\s-]*of[\s-]*season|\bROS\b/i.test(control.selected));
+  const recentDays = selectedSource.match(/\blast\s+(\d+)\s+days\b/i);
+  const recentGames = selectedSource.match(/\blast\s+(\d+)\s+games\b/i);
+  const period = kind !== 'current' ? null : recentDays ? `days-${recentDays[1]}`
+    : recentGames ? recentGames[1] : /regular season|season.to.date/i.test(selectedSource) ? 'season' : null;
   const heading = clean(document.querySelector('h1,h2,h3,h4,h5')?.textContent);
-  const season = `${heading} ${document.title}`.match(/\b(20\d{2})\s*[-–/]\s*(20\d{2}|\d{2})\b/);
+  const season = `${selectedSource} ${heading} ${document.title}`.match(/\b(20\d{2})\s*[-–/]\s*(20\d{2}|\d{2})\b/);
   const seasonStart = season ? Number(season[1]) : null;
   const seasonEnd = season
     ? (season[2].length === 4 ? Number(season[2]) : Math.floor(seasonStart / 100) * 100 + Number(season[2]))
     : null;
   const endingYear = seasonEnd !== null && seasonEnd < seasonStart ? seasonEnd + 100 : seasonEnd;
+  const limitControl = selectedControls.find(control => /DDSHOW$/i.test(control.name));
+  const limitMatch = limitControl?.selected.match(/\btop\s+(\d+)\b/i);
+  const pageLimit = limitMatch ? Number(limitMatch[1]) : null;
+  const possibleTruncation = pageLimit !== null ? players.length >= pageLimit : players.length <= 30;
+  const warnings = [];
+  if (basis === 'unconfirmed') warnings.push('Per-game basis was not detected automatically. Verify the selected basis before importing.');
+  if (kind === 'projections' && !rosControl) warnings.push('The selected source did not explicitly identify rest-of-season projections. Confirm the projection horizon.');
+  if (possibleTruncation) warnings.push(pageLimit
+    ? `The table reached the selected Top ${pageLimit} player limit. Select a larger player list for broader coverage.`
+    : 'Only 30 or fewer players were exported. Confirm that subscription access and player filters include everyone needed.');
+
+  const scoringFields = {
+    FGM: 'fgm', FGA: 'fga', FTM: 'ftm', FTA: 'fta', '3PM': 'fg3m', PTS: 'pts',
+    REB: 'reb', AST: 'ast', STL: 'stl', BLK: 'blk', TO: 'tov', MP: 'min'
+  };
+  const unsupportedFields = ['3PA', 'DREB', 'OREB', 'GP', 'FGMI', 'TPMI', 'DD', 'TD', 'PF', 'ATO', 'TECH', 'EJCT', 'FTMI', 'TW'];
+  const scoring = Object.fromEntries(Object.values(scoringFields).map(key => [key, 0]));
+  const unsupportedScoring = [];
+  let hasScoringControls = false;
+  for (const field of [...Object.keys(scoringFields), ...unsupportedFields]) {
+    const input = document.querySelector(`input[id$="_DD${field}"]`);
+    const checkbox = document.querySelector(`input[id$="_CB${field}"]`);
+    if (!input || !checkbox) continue;
+    if (scoringFields[field]) hasScoringControls = true;
+    if (!checkbox.checked || input.disabled || checkbox.disabled) continue;
+    const raw = clean(input.value);
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw) || !Number.isFinite(Number(raw))) {
+      throw new Error(`The enabled ${field} scoring coefficient is not a valid number. Fix it on Hashtag before exporting.`);
+    }
+    const weight = Number(raw);
+    if (scoringFields[field]) scoring[scoringFields[field]] = weight;
+    else if (weight !== 0) unsupportedScoring.push(field);
+  }
+  if (unsupportedScoring.length) warnings.push(`Active scoring categories are not supported by Value Gap: ${unsupportedScoring.join(', ')}. Match your league rules before relying on FPTS.`);
   const metadata = {
     source: 'Hashtag Basketball',
     url: location.href,
@@ -150,9 +197,14 @@
     basis,
     kind,
     horizon: rosControl ? 'rest-of-season' : 'unconfirmed',
+    ...(selectedSource ? { selectedSource, selectedDuration: selectedSource } : {}),
+    ...(period ? { period } : {}),
     selectedSources,
     coverage: 'visible-table',
-    possibleTruncation: players.length <= 30,
+    possibleTruncation,
+    ...(pageLimit !== null ? { pageLimit } : {}),
+    ...(hasScoringControls ? { scoring, unsupportedScoring } : {}),
+    warnings,
     ...(season ? { season: endingYear, sourceSeasonLabel: `${season[1]}-${season[2]}` } : {})
   };
   const file = new Blob([JSON.stringify({ players, metadata }, null, 2)], { type: 'application/json' });
@@ -166,7 +218,5 @@
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
   console.info(`Exported ${players.length} ${kind} rows from the visible Hashtag table.`, metadata);
-  if (basis === 'unconfirmed') console.warn('Per-game basis was not detected automatically. Verify the selected basis before importing this file.');
-  if (kind === 'projections' && !rosControl) console.warn('The selected source did not explicitly identify rest-of-season projections. Confirm the projection horizon before using this as your ROS baseline.');
-  if (metadata.possibleTruncation) console.warn('Only 30 or fewer players were exported. The public projection page is capped at 30. Sign in, select the full player list and re-export if you need all players.');
+  for (const warning of warnings) console.warn(warning);
 })();

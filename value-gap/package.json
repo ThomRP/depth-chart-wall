@@ -1,0 +1,11 @@
+{
+  "name": "courtside-value-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test engine.test.mjs html-import.test.mjs ../tests/value-worker.test.mjs"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.15"
+  }
+}

@@ -16,12 +16,14 @@ const number = value => value == null ? '—' : Number(value).toFixed(1);
 const signClass = value => value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral';
 let sourceTab = 'projections', toastTimer, generation = 0, currentResults = [], currentMatches;
 let statsBusy=false, statsMessage='', statsError=false, lastStatsAttempt=0;
-let state = {demo:false,projections:null,current:null,scoring:{...DEFAULT_SCORING},workerUrl:DEFAULT_WORKER_URL,workerPeriod:'season',season:year};
+let state = {demo:false,projections:null,current:null,scoring:{...DEFAULT_SCORING},workerUrl:DEFAULT_WORKER_URL,workerPeriod:'season',season:year,minProjectedFpts:null};
 try { const saved = JSON.parse(localStorage.getItem(STORAGE)); if (saved?.version === 1) state = {...state,...saved.state,scoring:{...DEFAULT_SCORING,...saved.state.scoring}}; } catch { /* Browser storage is optional. */ }
 
 // Migrate earlier demo sessions to real-data mode.
 state.demo=false;
 state.workerUrl ||= DEFAULT_WORKER_URL;
+state.minProjectedFpts=Number.isFinite(state.minProjectedFpts)&&state.minProjectedFpts>=0?state.minProjectedFpts:null;
+$('min-projected-fpts').value=state.minProjectedFpts??'';
 function datasets(){return state;}
 function persist(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,state}));}catch{toast('Browser storage unavailable. Keep your import files to restore this session.');}}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
@@ -47,7 +49,7 @@ function renderProjectionLibrary(data,query,position){
   const show=Boolean(data.projections&&!data.current);
   $('projection-library').hidden=!show;
   if(!show)return;
-  const projections=data.projections.players.filter(p=>(!query||`${p.name} ${p.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))).map(p=>({...p,fpts:computeFpts(p.stats,state.scoring)}));
+  const projections=data.projections.players.filter(p=>(!query||`${p.name} ${p.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))).map(p=>({...p,fpts:computeFpts(p.stats,state.scoring)})).filter(p=>state.minProjectedFpts===null||(p.fpts!==null&&p.fpts>=state.minProjectedFpts));
   projections.sort((a,b)=>(b.fpts??-Infinity)-(a.fpts??-Infinity)||a.name.localeCompare(b.name));
   $('projection-library-count').textContent=`${projections.length} / ${data.projections.players.length}`;
   const defs=STAT_DEFS.filter((def,i)=>i<8||$('shooting').checked||state.scoring[def.key]!==0);
@@ -89,14 +91,14 @@ function render(){
   const complete=compared.filter(p=>p.delta!==null);
   const incomplete=compared.filter(p=>p.delta===null);
   const query=$('search').value.toLowerCase().trim(),position=$('position').value,minGames=Number($('min-games').value);
-  const filtered=complete.filter(p=>(!query||`${p.name} ${p.team} ${p.currentPlayer.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))&&(minGames===0||(p.games!==null&&p.games>=minGames)));
+  const filtered=complete.filter(p=>(!query||`${p.name} ${p.team} ${p.currentPlayer.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))&&(minGames===0||(p.games!==null&&p.games>=minGames))&&(state.minProjectedFpts===null||p.projectionFpts>=state.minProjectedFpts));
   const sortKey=$('sort').value==='percent'?'gapPercent':'delta';
   const magnitude=player=>Number.isFinite(player[sortKey])?Math.abs(player[sortKey]):-Infinity;
   filtered.sort((a,b)=>magnitude(b)-magnitude(a)||a.name.localeCompare(b.name));
   currentResults=filtered;
   const under=filtered.filter(p=>p.delta<-.000001),over=filtered.filter(p=>p.delta>.000001),neutral=complete.filter(p=>Math.abs(p.delta)<=.000001);
-  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Try another position or a lower minimum games filter.':data.projections?'Your ROS projections are loaded below. Current NBA stats load automatically; use Refresh NBA stats to retry.':'Import ROS projections and current stats in Data sources.'}</div>`;
-  $('over-list').innerHTML=over.length?over.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Waiting for current production':'Your next sell-high starts here'}</b>${complete.length?'Try another position or a lower minimum games filter.':'Both sources must be matched before players can be ranked.'}</div>`;
+  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Adjust your search, position, or minimum games / projected FPTS.':data.projections?'Your ROS projections are loaded below. Current NBA stats load automatically; use Refresh NBA stats to retry.':'Import ROS projections and current stats in Data sources.'}</div>`;
+  $('over-list').innerHTML=over.length?over.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Waiting for current production':'Your next sell-high starts here'}</b>${complete.length?'Adjust your search, position, or minimum games / projected FPTS.':'Both sources must be matched before players can be ranked.'}</div>`;
   $('summary-count').textContent=complete.length;$('summary-under').textContent=complete.filter(p=>p.delta<-.000001).length;$('summary-over').textContent=complete.filter(p=>p.delta>.000001).length;
   $('under-count').textContent=under.length;$('over-count').textContent=over.length;
   $('coverage-detail').textContent=`${complete.length} of ${data.projections?.players.length||0} projected players · ${data.current?windowName(data.current.metadata.period):'Awaiting current stats'}`;
@@ -126,6 +128,11 @@ document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>but
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
 $('sources-open').onclick=()=>openSources();$('method-open').onclick=()=>$('method-dialog').showModal();
 document.querySelectorAll('[data-source-tab]').forEach(button=>button.onclick=()=>setSourceTab(button.dataset.sourceTab));
+$('min-projected-fpts').addEventListener('input',event=>{
+  const input=event.target;
+  state.minProjectedFpts=input.value!==''&&Number.isFinite(input.valueAsNumber)&&input.valueAsNumber>=0?input.valueAsNumber:null;
+  persist();render();
+});
 for(const id of ['search','position','min-games','sort','shooting'])$(id).addEventListener(id==='search'?'input':'change',render);
 function scoringFields(scoring){$('scoring-fields').innerHTML=STAT_DEFS.map(def=>`<label>${def.label} <span>${def.name}</span><input name="${def.key}" type="number" step="any" min="-10000" max="10000" required value="${scoring[def.key]}"></label>`).join('');}
 $('scoring-open').onclick=()=>{scoringFields(state.scoring);$('scoring-dialog').showModal();};

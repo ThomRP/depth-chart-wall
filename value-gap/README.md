@@ -26,7 +26,7 @@ Current stats connect automatically to `https://value-gaps.thomrisped.workers.de
 
 ## Calculation and limits
 
-`FPTS = Σ (per-game stat × league weight)` and `gap = current FPTS − ROS FPTS`. Players missing a nonzero weighted stat cannot be ranked. Zero projection baselines have no percentage gap. Filters support name, team, position, games played, absolute FPTS gap and percentage gap. CSV export contains the filtered comparison with all three rows.
+`FPTS = Σ (per-game stat × league weight)` and `gap = current FPTS − ROS FPTS`. Players missing a nonzero weighted stat cannot be ranked. Zero projection baselines have no percentage gap. Filters support name, team, position, games played, and an inclusive minimum projected FPTS per game using the current league scoring. The projected minimum accepts typed numbers with one-point spinner steps, is remembered in the browser, and clears to show all players when left blank. It applies to both lists, the projection library, and filtered CSV export. Sorting supports absolute FPTS gap and percentage gap. CSV export contains the filtered comparison with all three rows.
 
 The first version supports additive per-stat points, including made/attempted shooting and minutes. It does not score percentage categories, double/triple-double bonuses, or estimate market trade prices. Hashtag pure ROS projections are treated as the baseline; no regression forecasting is added.
 

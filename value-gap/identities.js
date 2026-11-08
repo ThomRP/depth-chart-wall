@@ -1,4 +1,12 @@
 import { normalizeName } from './engine.js';
+import playerDirectory from './player-directory.js';
+
+const directoryByName = new Map();
+for (const player of playerDirectory) {
+  const name = normalizeName(player.name);
+  const existing = directoryByName.get(name);
+  directoryByName.set(name, directoryByName.has(name) && existing !== player.espnId ? null : player.espnId);
+}
 
 // Injured players can disappear from the existing depth-chart feed. Stable IDs
 // verified against official ESPN profiles allow requesting their game logs too.
@@ -22,12 +30,12 @@ const ESPN_PROFILES = Object.freeze({
   jordanmiller: { id: '4396818', source: 'https://africa.espn.com/nba/player/gamelog/_/id/4396818/jordan-miller' }
 });
 
-export function rosterForProjections(projections, roster) {
+export function rosterForProjections(projections, roster = []) {
   const players = roster.map(player => ({ ...player, espnId: String(player.id), stats: {} }));
   const ids = new Set(players.map(player => player.espnId));
   for (const projection of projections) {
     const profile = ESPN_PROFILES[normalizeName(projection.name)];
-    const id = String(projection.espnId || profile?.id || '');
+    const id = String(projection.espnId || profile?.id || directoryByName.get(normalizeName(projection.name)) || '');
     if (!/^\d+$/.test(id) || ids.has(id)) continue;
     // A unique name already supplied by the live roster takes precedence.
     if (players.some(player => normalizeName(player.name) === normalizeName(projection.name))) continue;

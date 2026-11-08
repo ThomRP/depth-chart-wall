@@ -1,7 +1,8 @@
 import { STAT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers } from './engine.js';
 import { parseHashtagHtml, looksLikeHashtagHtml } from './html-import.js';
-import { rosterForProjections } from './identities.js';
+import { rosterForProjections } from './identities.js?v=roster-fix-1';
 import { isHostedProjection, applyHostedSnapshot } from './snapshots.js';
+import { fetchJson, fetchPlayerStats, isLiveStats } from './stats-client.js';
 
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -78,7 +79,7 @@ function playerCard(player,index){
     const direction=player.statPerformance[def.key];
     return `<td class="${kind==='difference'?signClass(direction):''}" title="${escape(def.name)}${kind==='difference'?' · current minus projection':''}">${kind==='difference'?signed(value):number(value)}</td>`;
   }).join('')}<td class="fpts ${kind==='difference'?signClass(player.delta):''}">${kind==='current'?number(player.currentFpts):kind==='projection'?number(player.projectionFpts):signed(player.delta)}</td></tr>`;
-  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ROS`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ROS projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row('ROS proj.','projection')}${row('Difference','difference')}</tbody></table></div></article>`;
+  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP${player.currentPlayer.retainedFromPrevious?'<span class="cached-label">CACHED</span>':''}</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ROS`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ROS projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row('ROS proj.','projection')}${row('Difference','difference')}</tbody></table></div></article>`;
 }
 function render(){
   const data=datasets();
@@ -147,17 +148,18 @@ $('import-form').onsubmit=event=>{
     $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
     $('import-text').value='';$('basis-confirm').checked=false;
     toast(`${imported.players.length} ${sourceTab==='projections'?'ROS projections':'current-stat rows'} imported.`);
-    if(sourceTab==='projections'&&(!state.current||state.current.metadata.workerUrl))void refreshCurrentStats();
+    if(sourceTab==='projections'&&(!state.current||isLiveStats(state.current)))void refreshCurrentStats();
   }catch(error){$('import-message').className='form-message';$('import-message').textContent=error.message;}
 };
 $('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,initialDataCleared:true};persist();statsMessage='';statsError=false;render();$('import-message').textContent='Imported data cleared from this browser.';};
 
-async function getJson(url){const response=await fetch(url,{signal:AbortSignal.timeout(30000),credentials:'omit'});if(!response.ok)throw new Error(`Worker returned HTTP ${response.status}. Check its URL and deployment.`);const data=await response.json();if(data.error)throw new Error(data.error);return data;}
 function renderStatsSync(){
-  $('stats-sync').classList.toggle('sync-error',statsError);
-  const current=state.current,stamp=current?.metadata.updatedAt||current?.metadata.importedAt;
+  const current=state.current;
+  const partial=Boolean(current?.metadata.partial&&!statsBusy);
+  $('stats-sync').classList.toggle('sync-error',statsError||partial);
+  const stamp=current?.metadata.updatedAt||current?.metadata.importedAt;
   const formatted=stamp?new Date(stamp).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
-  $('stats-sync-message').textContent=statsMessage||(!state.projections?'Import ROS projections to connect current NBA stats.':current?.metadata.workerUrl?`NBA stats synced ${formatted} · refresh every 15 minutes while open.`:current?'Using your current-stat import. Refresh NBA stats to switch to ESPN.':'Connecting to current NBA stats…');
+  $('stats-sync-message').textContent=statsMessage||(!state.projections?'Import ROS projections to connect current NBA stats.':partial?`NBA stats partially loaded: ${current.players.length} players · some updates were unavailable. Use Refresh NBA stats to retry.`:isLiveStats(current)?`NBA stats synced ${formatted} · refresh every 15 minutes while open.`:current?'Using your current-stat import. Refresh NBA stats to switch to ESPN.':'Connecting to current NBA stats…');
   $('refresh-stats').disabled=statsBusy||!state.projections;
   $('refresh-stats').textContent=statsBusy?'Fetching NBA stats…':'Refresh NBA stats ↻';
   $('live-period').value=state.workerPeriod;
@@ -181,32 +183,52 @@ async function refreshCurrentStats({url=state.workerUrl,season=Number(state.proj
   state.workerUrl=base;state.workerPeriod=period;persist();statsBusy=true;lastStatsAttempt=Date.now();
   reportStats('Matching projections to the NBA roster…');
   try{
-    const roster=await getJson(`${base}/roster`);if(!Array.isArray(roster.players))throw new Error('Worker /roster response must contain a players array.');
-    if(token!==generation)return false;
-    const rosterPlayers=rosterForProjections(projectionSnapshot.players,roster.players);
-    const matches=matchPlayers(projectionSnapshot.players,rosterPlayers),ids=[...new Set(matches.players.map(p=>p.currentPlayer.espnId))];
-    if(!ids.length)throw new Error('No projections matched the ESPN roster. Check player names and source coverage in Data sources.');
-    const returned=[],errors=[];let updatedAt;
-    for(let i=0;i<ids.length;i+=20){
-      if(token!==generation)return false;
-      reportStats(`Fetching NBA stats: ${Math.min(i+20,ids.length)} / ${ids.length} players…`);
-      const batch=ids.slice(i,i+20);
-      const data=await getJson(`${base}/stats?${new URLSearchParams({ids:batch.join(','),period,season:String(season)})}`);
-      if(data.period!==period||String(data.season)!==String(season)||!Array.isArray(data.players))throw new Error('Worker returned a different period, season, or invalid player data.');
-      updatedAt=data.updatedAt;
-      for(const id of batch){
-        const identity=rosterPlayers.find(p=>p.espnId===id),player=data.players.find(p=>String(p.id)===id);
-        if(!player||player.error){errors.push(`${identity.name}: ${player?.error||'missing_worker_result'}`);continue;}
-        returned.push({...identity,...player,espnId:String(player.id)});
-      }
+    // Known ESPN IDs are bundled, so the deployed Worker's broken /roster
+    // proxy is not required to compare the supplied NBA players.
+    let rosterPlayers=rosterForProjections(projectionSnapshot.players);
+    let matches=matchPlayers(projectionSnapshot.players,rosterPlayers);
+    if(matches.unmatchedProjections.length){
+      try{
+        const feed=await fetchJson('https://ancient-haze-faf8.thomrisped.workers.dev');
+        const live=new Map();
+        for(const team of feed.teams||[])for(const [position,rows] of Object.entries(team.depth||{}))for(const p of rows)if(p.id)live.set(String(p.id),{id:p.id,name:p.fullName,team:team.abbr,position});
+        rosterPlayers=rosterForProjections(projectionSnapshot.players,[...live.values()]);
+        matches=matchPlayers(projectionSnapshot.players,rosterPlayers);
+      }catch{/* Known identities still work when the optional roster feed is unavailable. */}
     }
     if(token!==generation)return false;
-    if(!returned.length)throw new Error(`ESPN returned no usable stats for season ${season}. ${errors.slice(0,3).join('; ')}`);
-    const parsed=parseImport(JSON.stringify({players:returned,metadata:{source:'ESPN via your worker',workerUrl:base,season,period,projectionSnapshotId:projectionSnapshot.metadata.snapshotId||null,basis:'per-game',updatedAt:updatedAt||new Date().toISOString(),fetchedAt:new Date().toISOString(),errors}}));
-    state.current=parsed;state.season=season;persist();render();
-    reportStats(`NBA stats synced: ${returned.length} players · ${windowName(period)}${errors.length?` · ${errors.length} failed lookups`:''} · refresh every 15 minutes while open.`);
+    const identities=matches.players.map(p=>p.currentPlayer);
+    if(!identities.length)throw new Error('No ESPN identities found for these projections. Check player names in Data sources.');
+    const previous=state.current;
+    const canRetain=isLiveStats(previous)&&String(previous.metadata.season)===String(season)&&previous.metadata.period===period;
+    const prior=canRetain?previous.players:[];
+    const byId=new Map(identities.map(p=>[p.espnId,p]));
+    let lastPublishedCount=0,lastPublishedAt=0;
+    function publishRows(rows,failures,finished=false){
+      if(token!==generation||!rows.length)return;
+      if(!finished&&lastPublishedAt&&rows.length-lastPublishedCount<20&&Date.now()-lastPublishedAt<750)return;
+      lastPublishedCount=rows.length;lastPublishedAt=Date.now();
+      const merged=new Map(prior.map(p=>[p.espnId||p.id,{...p,retainedFromPrevious:true,statsUpdatedAt:p.statsUpdatedAt||previous.metadata.updatedAt}]));
+      for(const p of rows)merged.set(p.espnId,{...p,retainedFromPrevious:false});
+      const retained=[...merged.values()].filter(p=>p.retainedFromPrevious).length;
+      const errors=failures.map(f=>`${byId.get(f.id)?.name||f.id}: ${f.reason}`);
+      const warnings=retained?[`${retained} players still show their previous current stats${finished?' because this refresh did not return updated values':'; the refresh is in progress'}.`]:[];
+      const updatedAt=rows.map(p=>p.statsUpdatedAt).sort().at(-1)||new Date().toISOString();
+      state.current={players:[...merged.values()],metadata:{source:'ESPN via your worker',workerUrl:base,season,period,projectionSnapshotId:projectionSnapshot.metadata.snapshotId||null,basis:'per-game',updatedAt,fetchedAt:new Date().toISOString(),partial:!finished||failures.length>0,retainedPlayers:retained,errors},warnings};
+      state.season=season;persist();render();
+    }
+    const result=await fetchPlayerStats({base,identities,season,period,
+      cancelled:()=>token!==generation,
+      onProgress:(processed,total,loaded)=>reportStats(`Fetching NBA stats: ${processed} / ${total} · ${loaded} players loaded…`),
+      onRows:(rows,failures)=>publishRows(rows,failures)
+    });
+    if(token!==generation)return false;
+    if(!result.players.length)throw new Error(`/stats returned no usable players. ${result.failures[0]?.reason||'Check the stats Worker response.'}`);
+    publishRows(result.players,result.failures,true);
+    const unrefreshed=result.failures.length;
+    reportStats(`NBA stats: ${result.players.length} players updated · ${windowName(period)}${unrefreshed?` · ${unrefreshed} unavailable (see details below)`:''} · refresh every 15 minutes while open.`,unrefreshed>0);
     return true;
-  }catch(error){if(token===generation)reportStats(`NBA stats refresh failed: ${error.message}${state.current?' Previous current stats are still shown.':' Your projections are still loaded.'}`,true);return false;}finally{statsBusy=false;renderStatsSync();if(token!==generation&&state.projections&&(!state.current||state.current.metadata.workerUrl))void refreshCurrentStats();}
+  }catch(error){if(token===generation)reportStats(`NBA stats refresh failed: ${error.message}${state.current?' Previous current stats are still shown.':' Your projections are still loaded.'}`,true);return false;}finally{statsBusy=false;renderStatsSync();if(token!==generation&&state.projections&&(!state.current||isLiveStats(state.current)))void refreshCurrentStats();}
 }
 $('worker-form').onsubmit=event=>{event.preventDefault();void refreshCurrentStats({url:$('worker-url').value,season:Number($('worker-season').value),period:$('worker-period').value});};
 $('refresh-stats').onclick=()=>refreshCurrentStats();
@@ -214,7 +236,7 @@ $('live-period').onchange=event=>refreshCurrentStats({period:event.target.value}
 function maybeRefreshStats(){
   if(document.hidden||!state.projections||statsBusy)return;
   // Manual imports stay selected until the user explicitly switches to live stats.
-  if(state.current&&!state.current.metadata.workerUrl)return;
+  if(state.current?.players?.length&&!isLiveStats(state.current))return;
   const meta=state.current?.metadata;
   const sameQuery=meta&&String(meta.season)===String(state.projections.metadata.season)&&meta.period===state.workerPeriod&&meta.workerUrl===state.workerUrl&&(meta.projectionSnapshotId??null)===(state.projections.metadata.snapshotId??null);
   const lastSync=sameQuery?(Date.parse(meta.fetchedAt||meta.updatedAt||'')||0):0;

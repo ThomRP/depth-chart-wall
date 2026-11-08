@@ -10,6 +10,8 @@ No secret or API key is required. The worker reads public ESPN gamelogs and the 
 
 ## Routes
 
+The app now resolves all supplied players from bundled public ESPN identities and does not require this proxy route. The user deployment’s `/roster` returned `roster_http_404` while `/stats` worked; this app-side fix requires no Worker redeployment. For unknown future names, the app may try the original public depth feed directly.
+
 `GET /roster` returns `{ updatedAt, players: [{ id, name, team, position }] }`. Player IDs are ESPN athlete IDs, deduplicated across depth-chart positions. Players absent from the existing depth chart are not present in this roster; they can still be requested by known ESPN ID.
 
 `GET /stats?ids=1966,4277811&period=season&season=2027` returns:

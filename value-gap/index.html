@@ -4,7 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Find fantasy basketball buy-low and sell-high candidates by comparing current production with your rest-of-season projections.">
   <title>Value Lab · Fantasy basketball</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=roster-fix-1">
 </head>
 <body>
   <header class="topbar"><a class="brand" href="./" aria-label="Value Lab home"><span class="brand-icon">▦</span> COURTSIDE<span class="brand-divider"></span><span class="brand-sub">FANTASY TOOLS</span></a><nav><span class="nav-active">Value Lab</span><a href="https://thomrp.github.io/depth-chart-wall/" target="_blank" rel="noreferrer">Depth chart ↗</a></nav><span class="league-badge">NBA <span> / </span> POINTS LEAGUE</span></header>
@@ -30,6 +30,6 @@
 
   <dialog id="method-dialog"><div class="dialog-heading"><h2>Read the gap</h2><button class="icon-button" data-close aria-label="Close">×</button></div><p>Each player has three aligned rows: <b>current</b> production, your <b>ROS projection</b>, and the <b>difference</b> (current − projection).</p><p><span class="green-text">Green</span> means better fantasy performance; <span class="red-text">red</span> means worse. A negative turnover difference is green when turnovers have a negative scoring weight.</p><p>Both FPTS rows use the same league scoring. The lists are ordered by the gap in FPTS per game; a negative gap suggests a buy-low candidate and a positive gap a sell-high candidate, assuming your projections are the baseline.</p><p>Missing stats show “—”. Players missing any stat with a nonzero scoring weight cannot be ranked. Unmatched names and incomplete players are reported above the lists. Recent windows mean games played, not calendar days.</p><p class="muted">These gaps measure production against an assumed baseline. They don’t measure an opponent’s trade price or guarantee regression. Use current, pure ROS projections; BLEND sources incorporate recent production and reduce independence.</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=roster-fix-1"></script>
 </body>
 </html>

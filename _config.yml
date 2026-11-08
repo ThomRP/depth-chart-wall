@@ -1,9 +1,0 @@
-# Value Lab is pre-release. Keep its complete frontend out of public Pages.
-# The root depth-chart page and worker remain published.
-exclude:
-  - value-gap
-  - tests
-  - node_modules
-  - vendor
-  - Gemfile
-  - Gemfile.lock

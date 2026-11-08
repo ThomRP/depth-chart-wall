@@ -17,7 +17,10 @@ export const DEFAULT_SCORING = Object.freeze({ pts: 1, reb: 1.2, ast: 1.5, stl: 
 const statKeys = STAT_DEFS.map(({ key }) => key);
 const numberPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 const missing = value => value == null || /^(?:|[-–—]|n\/a|null|undefined)$/i.test(String(value).trim());
-const playerNameAliases = new Map([['nicolasclaxton','nicclaxton'],['alexandresarr','alexsarr']]);
+// ESPN uses Ronald Holland II; official Pistons game notes use Ron Holland II.
+// https://www.espn.com/nba/team/roster/_/name/det/sort/weight
+// https://cdn.nba.com/teams/uploads/sites/1610612739/2025/01/250127-detcle-notes.pdf
+const playerNameAliases = new Map([['nicolasclaxton','nicclaxton'],['alexandresarr','alexsarr'],['ronholland','ronaldholland']]);
 
 export function normalizeName(name) {
   const normalized = String(name || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()

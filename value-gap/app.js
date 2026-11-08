@@ -1,6 +1,7 @@
 import { STAT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers } from './engine.js';
 import { parseHashtagHtml, looksLikeHashtagHtml } from './html-import.js';
 import { rosterForProjections } from './identities.js';
+import { isHostedProjection, applyHostedSnapshot } from './snapshots.js';
 
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -55,18 +56,18 @@ $('library-current-open').onclick=()=>refreshCurrentStats();
 $('download-projections').onclick=()=>{if(state.projections)download('hashtag-ros-projections.json',JSON.stringify(state.projections,null,2),'application/json');};
 
 async function loadInitialData(){
-  if(state.projections||state.initialDataCleared)return;
+  if(state.initialDataCleared||(state.projections&&!isHostedProjection(state.projections)))return;
   try{
     const response=await fetch('./data/initial-projections.json',{cache:'no-store',credentials:'same-origin'});
     if(!response.ok)return;
-    const snapshot=await response.json(),parsed=parseImport(JSON.stringify(snapshot));
-    state.projections={...parsed,warnings:snapshot.warnings||parsed.warnings};
-    state.season=Number(parsed.metadata.season)||year;
-    if(Object.keys(DEFAULT_SCORING).every(key=>state.scoring[key]===DEFAULT_SCORING[key])&&parsed.metadata.scoring&&!parsed.metadata.unsupportedScoring?.length){
-      state.scoring={...DEFAULT_SCORING,...parsed.metadata.scoring};
-    }
-    persist();
-  }catch{/* A public code checkout works without a private supplied snapshot. */}
+    const previous=state.projections;
+    const result=applyHostedSnapshot(state,await response.json());
+    if(!result.changed)return;
+    state=result.state;persist();
+    if(previous)toast(`Saved ROS projections updated: ${state.projections.players.length} players.`);
+  }catch{
+    if(state.projections)toast('The saved projection update could not be loaded. Your previous projections are still available.');
+  }
 }
 
 function playerCard(player,index){
@@ -141,7 +142,7 @@ $('import-form').onsubmit=event=>{
     if(sourceTab==='current'&&metadata.period&&String(metadata.period)!==$('import-period').value)throw new Error(`The file uses period ${metadata.period}; change the selected current stats window to match.`);
     if(state.demo){state.projections=null;state.current=null;state.demo=false;}
     generation++;
-    state[sourceTab]={...imported,metadata:{...metadata,source:metadata.source||'Imported table',season:selectedSeason,basis:'per-game',importedAt:new Date().toISOString(),...(sourceTab==='projections'?{horizon:'rest-of-season'}:{period:$('import-period').value})},warnings:imported.warnings.filter(w=>!w.startsWith('Confirm these stats'))};
+    state[sourceTab]={...imported,metadata:{...metadata,source:metadata.source||'Imported table',season:selectedSeason,basis:'per-game',importedAt:new Date().toISOString(),...(sourceTab==='projections'?{horizon:'rest-of-season',managedSnapshot:false,snapshotId:null}:{period:$('import-period').value})},warnings:imported.warnings.filter(w=>!w.startsWith('Confirm these stats'))};
     state.season=selectedSeason;if($('page-scoring').checked&&metadata.scoring){for(const def of STAT_DEFS)if(Number.isFinite(metadata.scoring[def.key]))state.scoring[def.key]=metadata.scoring[def.key];}persist();render();
     $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
     $('import-text').value='';$('basis-confirm').checked=false;
@@ -201,7 +202,7 @@ async function refreshCurrentStats({url=state.workerUrl,season=Number(state.proj
     }
     if(token!==generation)return false;
     if(!returned.length)throw new Error(`ESPN returned no usable stats for season ${season}. ${errors.slice(0,3).join('; ')}`);
-    const parsed=parseImport(JSON.stringify({players:returned,metadata:{source:'ESPN via your worker',workerUrl:base,season,period,basis:'per-game',updatedAt:updatedAt||new Date().toISOString(),fetchedAt:new Date().toISOString(),errors}}));
+    const parsed=parseImport(JSON.stringify({players:returned,metadata:{source:'ESPN via your worker',workerUrl:base,season,period,projectionSnapshotId:projectionSnapshot.metadata.snapshotId||null,basis:'per-game',updatedAt:updatedAt||new Date().toISOString(),fetchedAt:new Date().toISOString(),errors}}));
     state.current=parsed;state.season=season;persist();render();
     reportStats(`NBA stats synced: ${returned.length} players · ${windowName(period)}${errors.length?` · ${errors.length} failed lookups`:''} · refresh every 15 minutes while open.`);
     return true;
@@ -215,7 +216,7 @@ function maybeRefreshStats(){
   // Manual imports stay selected until the user explicitly switches to live stats.
   if(state.current&&!state.current.metadata.workerUrl)return;
   const meta=state.current?.metadata;
-  const sameQuery=meta&&String(meta.season)===String(state.projections.metadata.season)&&meta.period===state.workerPeriod&&meta.workerUrl===state.workerUrl;
+  const sameQuery=meta&&String(meta.season)===String(state.projections.metadata.season)&&meta.period===state.workerPeriod&&meta.workerUrl===state.workerUrl&&(meta.projectionSnapshotId??null)===(state.projections.metadata.snapshotId??null);
   const lastSync=sameQuery?(Date.parse(meta.fetchedAt||meta.updatedAt||'')||0):0;
   if(Date.now()-Math.max(lastSync,lastStatsAttempt)>=LIVE_REFRESH_MS)void refreshCurrentStats();
 }

@@ -2,7 +2,7 @@
 
 For opening the app, using its controls, and updating projections, see the [step-by-step user guide](QUICKSTART.md).
 
-A standalone points-league tool, hosted at [GitHub Pages](https://thomrp.github.io/depth-chart-wall/value-gap/). Import your saved projection JSON on the first visit. You can also open `value-gap/` from a static HTTP server; the existing depth-chart `index.html` and `worker.js` are unchanged.
+A standalone points-league tool, currently pre-release and available through the [owner-private hosted app](https://courtside-value-lab-thomrp.awaremoon13.chatgpt.site). The public GitHub Pages build excludes `value-gap/` via the root `_config.yml`. Source code and repository history remain public. You can also open `value-gap/` from a local static HTTP server; the existing depth-chart `index.html` and `worker.js` are unchanged.
 
 The two lists compare current per-game production against **pure rest-of-season projections**. Each player shows current stats, ROS projections, and current-minus-projected differences, including fantasy points. League coefficients recalculate both FPTS rows and the rankings. Penalties such as turnovers reverse favorable colors while preserving the actual signed stat difference.
 

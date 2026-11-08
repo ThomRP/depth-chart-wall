@@ -1,20 +1,25 @@
 import { STAT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers } from './engine.js';
 import { parseHashtagHtml, looksLikeHashtagHtml } from './html-import.js';
+import { rosterForProjections } from './identities.js';
 
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const year = new Date().getFullYear() + (new Date().getMonth() >= 8 ? 1 : 0);
 const STORAGE = 'courtside-value-lab-v1';
+const DEFAULT_WORKER_URL = 'https://value-gaps.thomrisped.workers.dev';
+const LIVE_REFRESH_MS = 15 * 60 * 1000;
 const windowName = value => ({season:'Season to date','14':'Last 14 games','8':'Last 8 games','days-7':'Last 7 days','days-14':'Last 14 days','days-30':'Last 30 days'}[value] || 'Imported window');
 const signed = value => value == null ? '—' : (Math.abs(value) < .05 ? '0.0' : `${value > 0 ? '+' : '−'}${Math.abs(value).toFixed(1)}`);
 const number = value => value == null ? '—' : Number(value).toFixed(1);
 const signClass = value => value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral';
 let sourceTab = 'projections', toastTimer, generation = 0, currentResults = [], currentMatches;
-let state = {demo:false,projections:null,current:null,scoring:{...DEFAULT_SCORING},workerUrl:'',workerPeriod:'season',season:year};
+let statsBusy=false, statsMessage='', statsError=false, lastStatsAttempt=0;
+let state = {demo:false,projections:null,current:null,scoring:{...DEFAULT_SCORING},workerUrl:DEFAULT_WORKER_URL,workerPeriod:'season',season:year};
 try { const saved = JSON.parse(localStorage.getItem(STORAGE)); if (saved?.version === 1) state = {...state,...saved.state,scoring:{...DEFAULT_SCORING,...saved.state.scoring}}; } catch { /* Browser storage is optional. */ }
 
 // Migrate earlier demo sessions to real-data mode.
 state.demo=false;
+state.workerUrl ||= DEFAULT_WORKER_URL;
 function datasets(){return state;}
 function persist(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,state}));}catch{toast('Browser storage unavailable. Keep your import files to restore this session.');}}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
@@ -46,7 +51,7 @@ function renderProjectionLibrary(data,query,position){
   const defs=STAT_DEFS.filter((def,i)=>i<8||$('shooting').checked||state.scoring[def.key]!==0);
   $('projection-library-table').innerHTML=`<caption class="sr-only">Imported NBA rest-of-season projections. Current stats have not been added yet.</caption><thead><tr><th scope="col">PLAYER</th><th scope="col">TEAM</th><th scope="col">POS</th>${defs.map(d=>`<th scope="col">${d.label}</th>`).join('')}<th scope="col">FPTS</th></tr></thead><tbody>${projections.map(p=>`<tr><th scope="row">${escape(p.name)}</th><td>${escape(p.team)}</td><td>${escape(p.position)}</td>${defs.map(d=>`<td>${number(p.stats[d.key])}</td>`).join('')}<td class="projection-fpts">${number(p.fpts)}</td></tr>`).join('')}</tbody>`;
 }
-$('library-current-open').onclick=()=>openSources('current');
+$('library-current-open').onclick=()=>refreshCurrentStats();
 $('download-projections').onclick=()=>{if(state.projections)download('hashtag-ros-projections.json',JSON.stringify(state.projections,null,2),'application/json');};
 
 async function loadInitialData(){
@@ -88,7 +93,7 @@ function render(){
   filtered.sort((a,b)=>magnitude(b)-magnitude(a)||a.name.localeCompare(b.name));
   currentResults=filtered;
   const under=filtered.filter(p=>p.delta<-.000001),over=filtered.filter(p=>p.delta>.000001),neutral=complete.filter(p=>Math.abs(p.delta)<=.000001);
-  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Try another position or a lower minimum games filter.':data.projections?'Your ROS projections are loaded below. Add the Regular Season Rankings page source in Data sources → Current stats.':'Import ROS projections and current stats in Data sources.'}</div>`;
+  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Try another position or a lower minimum games filter.':data.projections?'Your ROS projections are loaded below. Current NBA stats load automatically; use Refresh NBA stats to retry.':'Import ROS projections and current stats in Data sources.'}</div>`;
   $('over-list').innerHTML=over.length?over.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Waiting for current production':'Your next sell-high starts here'}</b>${complete.length?'Try another position or a lower minimum games filter.':'Both sources must be matched before players can be ranked.'}</div>`;
   $('summary-count').textContent=complete.length;$('summary-under').textContent=complete.filter(p=>p.delta<-.000001).length;$('summary-over').textContent=complete.filter(p=>p.delta>.000001).length;
   $('under-count').textContent=under.length;$('over-count').textContent=over.length;
@@ -96,7 +101,7 @@ function render(){
   $('baseline-detail').textContent=state.demo?'Illustrative values · fictional players':`${data.projections?.metadata.source||'Import Hashtag projections'}${data.projections?` · ${data.projections.metadata.season-1}–${String(data.projections.metadata.season).slice(-2)}`:''}`;
   $('data-banner').classList.toggle('ready',!state.demo&&complete.length>0);
   $('data-banner').innerHTML=state.demo?'<span><b>ILLUSTRATIVE DEMO</b> Fictional players and sample numbers. Import your data to find real opportunities.</span><button class="text-button" id="banner-import">Use my data ↗</button>':`<span><b>${complete.length?'YOUR DATA':data.projections?'PROJECTIONS LOADED':'AWAITING DATA'}</b> ${data.projections?`${data.projections.players.length} ROS projections · ${data.projections.metadata.capturedAt?'captured':'imported'} ${humanDate(data.projections.metadata.capturedAt||data.projections.metadata.importedAt)}`:'Import your rest-of-season projections.'}${data.current?` · ${data.current.players.length} current-stat rows · ${windowName(data.current.metadata.period)} · ${humanDate(data.current.metadata.updatedAt||data.current.metadata.capturedAt||data.current.metadata.importedAt)}`:' Current stats are still needed to calculate over/underperformance.'}</span><button class="text-button" id="banner-import">Manage sources ↗</button>`;
-  $('banner-import').onclick=()=>openSources(data.projections&&!data.current?'current':'projections');
+  $('banner-import').onclick=()=>openSources('projections');
   renderProjectionLibrary(data,query,position);
   const notices=[];
   if(seasonMismatch)notices.push('The sources have different seasons. Import matching seasons before comparing.');
@@ -109,6 +114,7 @@ function render(){
   for(const source of [data.projections,data.current])if(source?.warnings)notices.push(...source.warnings);
   const details=[...incomplete.map(p=>`${p.name}: missing ${STAT_DEFS.filter(d=>state.scoring[d.key]!==0&&(p.current[d.key]==null||p.projection[d.key]==null)).map(d=>d.label).join(', ')}`),...currentMatches.unmatchedProjections.map(p=>`${p.name}: no current stats`),...currentMatches.ambiguous.map(p=>`${p.projection.name}: ambiguous match`),...currentMatches.unmatchedCurrent.map(p=>`${p.name}: no projection`),...(data.current?.metadata.errors||[])];
   $('match-notice').hidden=!notices.length;$('match-notice').innerHTML=notices.map(escape).join(' ')+(details.length?`<details><summary>Review excluded players and matches</summary><ul>${details.map(v=>`<li>${escape(v)}</li>`).join('')}</ul></details>`:'');
+  renderStatsSync();
   $('source-status').innerHTML=`<span>Projections: <b>${state.demo?'Demo':data.projections?`${data.projections.players.length} imported`:'Not imported'}</b></span><span>Current stats: <b>${state.demo?'Demo':data.current?`${data.current.players.length} imported`:'Not imported'}</b></span><span>Scoring: <b>${Object.keys(state.scoring).every(key=>state.scoring[key]===DEFAULT_SCORING[key])?'Standard points':'Custom points'}</b></span>`;
 }
 
@@ -140,39 +146,84 @@ $('import-form').onsubmit=event=>{
     $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
     $('import-text').value='';$('basis-confirm').checked=false;
     toast(`${imported.players.length} ${sourceTab==='projections'?'ROS projections':'current-stat rows'} imported.`);
+    if(sourceTab==='projections'&&(!state.current||state.current.metadata.workerUrl))void refreshCurrentStats();
   }catch(error){$('import-message').className='form-message';$('import-message').textContent=error.message;}
 };
-$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,initialDataCleared:true};persist();render();$('import-message').textContent='Imported data cleared from this browser.';};
+$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,initialDataCleared:true};persist();statsMessage='';statsError=false;render();$('import-message').textContent='Imported data cleared from this browser.';};
 
 async function getJson(url){const response=await fetch(url,{signal:AbortSignal.timeout(30000),credentials:'omit'});if(!response.ok)throw new Error(`Worker returned HTTP ${response.status}. Check its URL and deployment.`);const data=await response.json();if(data.error)throw new Error(data.error);return data;}
-$('worker-form').onsubmit=async event=>{
-  event.preventDefault();const button=$('worker-submit'),message=$('worker-message');message.className='form-message';
-  if(state.demo||!state.projections){message.textContent='Import your ROS projections first, then fetch current stats.';return;}
-  const inputUrl=new URL($('worker-url').value);if(inputUrl.protocol!=='https:'||inputUrl.username||inputUrl.password){message.textContent='Use an HTTPS Worker URL without credentials.';return;}
-  const season=Number($('worker-season').value),period=$('worker-period').value,token=++generation,projectionSnapshot=state.projections;
-  if(String(projectionSnapshot.metadata.season)!==String(season)){message.textContent='Select the same season as your ROS projection import.';return;}
-  const base=inputUrl.origin;button.disabled=true;message.textContent='Matching your projections to the depth-chart roster…';
+function renderStatsSync(){
+  $('stats-sync').classList.toggle('sync-error',statsError);
+  const current=state.current,stamp=current?.metadata.updatedAt||current?.metadata.importedAt;
+  const formatted=stamp?new Date(stamp).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+  $('stats-sync-message').textContent=statsMessage||(!state.projections?'Import ROS projections to connect current NBA stats.':current?.metadata.workerUrl?`NBA stats synced ${formatted} · refresh every 15 minutes while open.`:current?'Using your current-stat import. Refresh NBA stats to switch to ESPN.':'Connecting to current NBA stats…');
+  $('refresh-stats').disabled=statsBusy||!state.projections;
+  $('refresh-stats').textContent=statsBusy?'Fetching NBA stats…':'Refresh NBA stats ↻';
+  $('live-period').value=state.workerPeriod;
+  $('live-period').disabled=statsBusy||!state.projections;
+  $('worker-submit').disabled=statsBusy;
+  $('library-current-open').disabled=statsBusy;
+  $('library-current-open').textContent=statsBusy?'Fetching NBA stats…':'Fetch current NBA stats →';
+}
+function reportStats(message,error=false){
+  statsMessage=message;statsError=error;
+  $('worker-message').className=`form-message${error?'':' success'}`;
+  $('worker-message').textContent=message;renderStatsSync();
+}
+async function refreshCurrentStats({url=state.workerUrl,season=Number(state.projections?.metadata.season||state.season),period=state.workerPeriod}={}){
+  if(statsBusy)return false;
+  if(!state.projections){reportStats('Import your ROS projections first, then fetch current NBA stats.');return false;}
+  let base;
+  try{const parsedUrl=new URL(url);if(parsedUrl.protocol!=='https:'||parsedUrl.username||parsedUrl.password)throw new Error();base=parsedUrl.origin;}catch{reportStats('Use an HTTPS Worker URL without credentials.',true);return false;}
+  if(!['season','14','8'].includes(period)||String(state.projections.metadata.season)!==String(season)){reportStats('Select the same season as your ROS projections and a supported NBA stats window.',true);return false;}
+  const token=++generation,projectionSnapshot=state.projections;
+  state.workerUrl=base;state.workerPeriod=period;persist();statsBusy=true;lastStatsAttempt=Date.now();
+  reportStats('Matching projections to the NBA roster…');
   try{
     const roster=await getJson(`${base}/roster`);if(!Array.isArray(roster.players))throw new Error('Worker /roster response must contain a players array.');
-    const rosterPlayers=roster.players.map(player=>({...player,espnId:String(player.id),stats:{}}));
+    if(token!==generation)return false;
+    const rosterPlayers=rosterForProjections(projectionSnapshot.players,roster.players);
     const matches=matchPlayers(projectionSnapshot.players,rosterPlayers),ids=[...new Set(matches.players.map(p=>p.currentPlayer.espnId))];
-    if(!ids.length)throw new Error('No projections matched the ESPN roster. Check full player names or import current stats instead.');
+    if(!ids.length)throw new Error('No projections matched the ESPN roster. Check player names and source coverage in Data sources.');
     const returned=[],errors=[];let updatedAt;
     for(let i=0;i<ids.length;i+=20){
-      if(token!==generation)return;
-      message.textContent=`Fetching current stats: ${Math.min(i+20,ids.length)} / ${ids.length} players…`;
-      const data=await getJson(`${base}/stats?${new URLSearchParams({ids:ids.slice(i,i+20).join(','),period,season:String(season)})}`);
+      if(token!==generation)return false;
+      reportStats(`Fetching NBA stats: ${Math.min(i+20,ids.length)} / ${ids.length} players…`);
+      const batch=ids.slice(i,i+20);
+      const data=await getJson(`${base}/stats?${new URLSearchParams({ids:batch.join(','),period,season:String(season)})}`);
       if(data.period!==period||String(data.season)!==String(season)||!Array.isArray(data.players))throw new Error('Worker returned a different period, season, or invalid player data.');
       updatedAt=data.updatedAt;
-      for(const player of data.players){const identity=rosterPlayers.find(p=>p.espnId===String(player.id));if(!identity)continue;if(player.error){errors.push(`${identity.name}: ${player.error}`);continue;}returned.push({...identity,...player,espnId:String(player.id)});}
+      for(const id of batch){
+        const identity=rosterPlayers.find(p=>p.espnId===id),player=data.players.find(p=>String(p.id)===id);
+        if(!player||player.error){errors.push(`${identity.name}: ${player?.error||'missing_worker_result'}`);continue;}
+        returned.push({...identity,...player,espnId:String(player.id)});
+      }
     }
-    if(token!==generation)return;
-    if(!returned.length)throw new Error(`ESPN returned no usable stats. ${errors.slice(0,3).join('; ')}`);
-    const parsed=parseImport(JSON.stringify({players:returned,metadata:{source:'ESPN via your worker',season,period,basis:'per-game',updatedAt,errors}}));
-    state.current=parsed;state.workerUrl=base;state.workerPeriod=period;state.season=season;persist();render();message.className='form-message success';message.textContent=`Loaded ${returned.length} players. ${errors.length} failed lookups; ${matches.unmatchedProjections.length+matches.ambiguous.length} projections did not match the roster. Review coverage above the lists.`;toast('Current stats updated. Review source coverage before trading.');
-  }catch(error){if(token===generation)message.textContent=error.message;}finally{button.disabled=false;}
-};
+    if(token!==generation)return false;
+    if(!returned.length)throw new Error(`ESPN returned no usable stats for season ${season}. ${errors.slice(0,3).join('; ')}`);
+    const parsed=parseImport(JSON.stringify({players:returned,metadata:{source:'ESPN via your worker',workerUrl:base,season,period,basis:'per-game',updatedAt:updatedAt||new Date().toISOString(),fetchedAt:new Date().toISOString(),errors}}));
+    state.current=parsed;state.season=season;persist();render();
+    reportStats(`NBA stats synced: ${returned.length} players · ${windowName(period)}${errors.length?` · ${errors.length} failed lookups`:''} · refresh every 15 minutes while open.`);
+    return true;
+  }catch(error){if(token===generation)reportStats(`NBA stats refresh failed: ${error.message}${state.current?' Previous current stats are still shown.':' Your projections are still loaded.'}`,true);return false;}finally{statsBusy=false;renderStatsSync();if(token!==generation&&state.projections&&(!state.current||state.current.metadata.workerUrl))void refreshCurrentStats();}
+}
+$('worker-form').onsubmit=event=>{event.preventDefault();void refreshCurrentStats({url:$('worker-url').value,season:Number($('worker-season').value),period:$('worker-period').value});};
+$('refresh-stats').onclick=()=>refreshCurrentStats();
+$('live-period').onchange=event=>refreshCurrentStats({period:event.target.value});
+function maybeRefreshStats(){
+  if(document.hidden||!state.projections||statsBusy)return;
+  // Manual imports stay selected until the user explicitly switches to live stats.
+  if(state.current&&!state.current.metadata.workerUrl)return;
+  const meta=state.current?.metadata;
+  const sameQuery=meta&&String(meta.season)===String(state.projections.metadata.season)&&meta.period===state.workerPeriod&&meta.workerUrl===state.workerUrl;
+  const lastSync=sameQuery?(Date.parse(meta.fetchedAt||meta.updatedAt||'')||0):0;
+  if(Date.now()-Math.max(lastSync,lastStatsAttempt)>=LIVE_REFRESH_MS)void refreshCurrentStats();
+}
+document.addEventListener('visibilitychange',maybeRefreshStats);
+setInterval(maybeRefreshStats,LIVE_REFRESH_MS);
+
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('export-results').onclick=()=>{if(!currentResults.length){toast('No matched players to export.');return;}const defs=STAT_DEFS;const headers=['Player','Team','Position','Games','Source','Row','FPTS',...defs.map(def=>def.label)];const rows=[headers];for(const player of currentResults){for(const kind of ['current','projection','difference'])rows.push([player.name,player.currentPlayer.team||player.team,player.position,player.games,state.demo?'Fictional demo':'Imported data',kind,kind==='current'?player.currentFpts:kind==='projection'?player.projectionFpts:player.delta,...defs.map(def=>kind==='difference'?player.statDeltas[def.key]:player[kind][def.key])]);}const quote=value=>`"${String(value??'').replace(/"/g,'""')}"`;download(`value-lab-${state.demo?'DEMO-':''}${new Date().toISOString().slice(0,10)}.csv`,rows.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
 await loadInitialData();
 render();
+maybeRefreshStats();

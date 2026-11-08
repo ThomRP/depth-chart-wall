@@ -17,10 +17,14 @@ export const DEFAULT_SCORING = Object.freeze({ pts: 1, reb: 1.2, ast: 1.5, stl: 
 const statKeys = STAT_DEFS.map(({ key }) => key);
 const numberPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 const missing = value => value == null || /^(?:|[-–—]|n\/a|null|undefined)$/i.test(String(value).trim());
+const playerNameAliases = new Map([['nicolasclaxton','nicclaxton'],['alexandresarr','alexsarr']]);
 
 export function normalizeName(name) {
-  return String(name || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+  const normalized = String(name || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
     .replace(/\b(?:jr|sr|ii|iii|iv|v)\.?\s*$/i, '').replace(/[^a-z0-9]/g, '');
+  // Explicit full-name variations observed across Hashtag and ESPN. Do not use
+  // fuzzy or partial names: those can join different players.
+  return playerNameAliases.get(normalized) || normalized;
 }
 const cleanHeader = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9%]/g, '');
 const aliases = {

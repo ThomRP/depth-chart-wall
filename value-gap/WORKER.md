@@ -1,6 +1,6 @@
 # Current NBA stats worker
 
-`value-worker.js` in this folder is a separate Cloudflare Worker. It does not replace the repository's existing `../worker.js` and does not need Hashtag account access. The value comparison tool can also work entirely with imported projection/current-stat files without deploying a worker.
+The deployed Worker is `https://value-gaps.thomrisped.workers.dev`; the app uses it by default. `value-worker.js` in this folder is its standalone source. It does not replace the repository's existing `../worker.js` and does not need Hashtag account access. The value comparison tool can also work entirely with imported projection/current-stat files without deploying a worker.
 
 1. Create a new Worker in your Cloudflare dashboard.
 2. Replace its starter code with the complete contents of `value-worker.js`, then deploy.
@@ -48,4 +48,4 @@ At most 20 numeric athlete IDs are accepted per request. The browser should batc
 
 Complete results are cached for 15 minutes. Incomplete or failed batches use `Cache-Control: no-store`. As with the existing worker, the endpoints are public with CORS enabled; no user data or credentials are accepted. ESPN endpoints are undocumented and may change, so import remains the fallback.
 
-Run the parser and request-validation checks with `node --test tests/value-worker.test.mjs` from the repository root. These tests use fixtures, not live ESPN data. Live deployment and ESPN responses still need verification after you deploy your new worker.
+Run the parser and request-validation checks with `node --test tests/value-worker.test.mjs` from the repository root. These tests use fixtures, not live ESPN data. A live response supplied from the deployed Worker verified 2026–27 per-game stats for Jokic and Doncic. The development environment does not currently allow this new hostname, so full live batch coverage must be checked in the app in the user’s browser.

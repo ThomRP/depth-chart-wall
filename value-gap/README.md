@@ -1,5 +1,7 @@
 # Courtside · Value Lab
 
+For opening the app, using its controls, and updating projections, see the [step-by-step user guide](QUICKSTART.md).
+
 A standalone points-league tool. Open `value-gap/` from a static HTTP server; the existing depth-chart `index.html` and `worker.js` are unchanged.
 
 The two lists compare current per-game production against **pure rest-of-season projections**. Each player shows current stats, ROS projections, and current-minus-projected differences, including fantasy points. League coefficients recalculate both FPTS rows and the rankings. Penalties such as turnovers reverse favorable colors while preserving the actual signed stat difference.

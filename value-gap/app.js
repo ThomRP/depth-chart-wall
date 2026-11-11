@@ -1,7 +1,7 @@
-import { STAT_DEFS, PERCENT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers, statValue } from './engine.js?v=darko-1';
+import { STAT_DEFS, PERCENT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers, statValue } from './engine.js?v=combined-1';
 import { parseHashtagHtml, looksLikeHashtagHtml } from './html-import.js';
 import { rosterForProjections } from './identities.js?v=darko-1';
-import { projectionKey, projectionLabel, rememberProjection, unavailableScoredCategories, matchesPosition, positionFilters } from './projection-sources.js?v=darko-1';
+import { projectionKey, projectionLabel, rememberProjection, rebuildCombinedProjection, identifyProjectionImport, unavailableScoredCategories, matchesPosition, positionFilters } from './projection-sources.js?v=combined-1';
 import { isHostedProjection, applyHostedSnapshot } from './snapshots.js';
 import { fetchJson, fetchPlayerStats, isLiveStats } from './stats-client.js';
 
@@ -26,6 +26,9 @@ state.workerUrl ||= DEFAULT_WORKER_URL;
 state.minProjectedFpts=Number.isFinite(state.minProjectedFpts)&&state.minProjectedFpts>=0?state.minProjectedFpts:null;
 $('min-projected-fpts').value=state.minProjectedFpts??'';
 if(state.projections)state=rememberProjection(state,state.projections);
+let combinedError='';
+function rebuildCombined(selectWhenReady=false){const result=rebuildCombinedProjection(state,{selectWhenReady});state=result.state;combinedError=result.error||'';}
+rebuildCombined(!state.projectionSources?.combined);
 const baselineLabel=()=>projectionLabel(state.projections);
 const displayDefs=()=>[...STAT_DEFS.filter((def,i)=>i<8||$('shooting').checked||state.scoring[def.key]!==0),...($('shooting').checked?PERCENT_DEFS:[])];
 const statNumber=(value,def,difference=false)=>def.percentage?(value==null?'—':`${difference?signed(value*100):number(value*100)}${difference?' pp':'%'}`):(difference?signed(value):number(value));
@@ -34,7 +37,7 @@ function persist(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,st
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function humanDate(value){if(!value)return 'date not recorded';const date=new Date(value);return Number.isFinite(date.valueOf())?date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'date not recorded';}
 
-function readImport(text){return looksLikeHashtagHtml(text)?parseHashtagHtml(text):parseImport(text);}
+function readImport(text){const imported=looksLikeHashtagHtml(text)?parseHashtagHtml(text):parseImport(text);return sourceTab==='projections'?identifyProjectionImport(imported,$('projection-provider').value):imported;}
 function previewImport(){
   const preview=$('detected-import');
   try{
@@ -47,12 +50,13 @@ function previewImport(){
     $('page-scoring').disabled=Boolean(meta.unsupportedScoring?.length);
     const darko=meta.provider==='darko';
     $('import-limits').hidden=!darko;
-    $('import-limits').textContent=darko?'DARKO daily baseline · FGM/FGA/FTM/FTA and scoring weights are absent from this CSV. FP/G is reference only. Your existing scoring is preserved; incompatible weights will be flagged after import. Choose the season below (2026–27 = 2027).':'';
+    $('import-limits').textContent=darko?'DARKO is converted to per-minute rates for Combined ROS. This CSV omits FGM/FGA/FTM/FTA; the combined baseline keeps those from Hashtag. Standalone DARKO still needs reduced scoring for omitted categories. FP/G is reference only. Choose the season below (2026–27 = 2027).':'';
     if(sourceTab==='projections')$('basis-confirm-text').textContent=darko?'These are DARKO per-game projections for the season selected above.':'I’ve selected pure rest-of-season projections and per-game averages.';
   }catch{preview.hidden=true;$('page-scoring-label').hidden=true;$('page-scoring').checked=false;$('import-limits').hidden=true;}
 }
 let importPreviewTimer;
 $('import-text').addEventListener('input',()=>{clearTimeout(importPreviewTimer);importPreviewTimer=setTimeout(previewImport,250);});
+$('projection-provider').addEventListener('change',previewImport);
 
 function renderProjectionLibrary(data,query,position){
   const show=Boolean(data.projections&&!data.current);
@@ -75,11 +79,18 @@ async function loadInitialData(){
     const previous=state.projections;
     const result=applyHostedSnapshot(state,await response.json());
     if(!result.changed)return;
-    state=rememberProjection(result.state,result.state.projections);persist();
+    state=rememberProjection(result.state,result.state.projections);rebuildCombined(!state.projectionSources?.combined);persist();
     if(previous)toast(`Saved ROS projections updated: ${state.projections.players.length} players.`);
   }catch{
     if(state.projections)toast('The saved projection update could not be loaded. Your previous projections are still available.');
   }
+}
+
+function projectionInputs(player){
+  const inputs=player.components;
+  if(!inputs)return '';
+  const defs=displayDefs().filter(def=>inputs.stats[def.key]);
+  return `<details class="projection-inputs"><summary>Projection inputs · 50/50 rates, Hashtag minutes</summary><p>Hashtag: ${number(inputs.hashtagMinutes)} MIN · DARKO source: ${number(inputs.darkoMinutes)} MIN. DARKO rates are scaled to Hashtag minutes before averaging. FPTS is recalculated from the result.</p><div class="input-stats-scroll" tabindex="0" role="region" aria-label="${escape(player.name)} projection inputs"><table><caption class="sr-only">How the combined projection is calculated</caption><thead><tr><th>STAT</th><th>HASHTAG /G</th><th>DARKO /MIN</th><th>DARKO @ ${number(inputs.hashtagMinutes)} MIN</th><th>COMBINED /G</th></tr></thead><tbody>${defs.map(def=>{const input=inputs.stats[def.key];return `<tr><th scope="row">${def.label}</th><td>${number(input.hashtag)}</td><td>${input.darkoPerMinute==null?'—':input.darkoPerMinute.toFixed(3)}</td><td>${number(input.darkoAdjusted)}</td><td>${number(player.projection[def.key])}${input.method==='hashtag-only'?'<span class="input-source">Hashtag only</span>':''}</td></tr>`;}).join('')}</tbody></table></div></details>`;
 }
 
 function playerCard(player,index){
@@ -88,9 +99,9 @@ function playerCard(player,index){
   const row=(label,kind)=>`<tr class="${kind}"><td>${label}</td>${defs.map(def=>{
     const value=kind==='difference'?player.statDeltas[def.key]:statValue(player[kind],def.key);
     const direction=player.statPerformance[def.key];
-    return `<td class="${kind==='difference'?signClass(direction):''}" title="${escape(def.name)}${kind==='difference'?' · current minus projection':''}">${statNumber(value,def,kind==='difference')}</td>`;
+    return `<td class="${kind==='difference'?signClass(direction):''}" title="${escape(def.name)}${kind==='difference'?' · current minus projection':kind==='projection'&&player.components?.stats[def.key]?.method==='hashtag-only'?' · Hashtag only; DARKO value unavailable':''}">${statNumber(value,def,kind==='difference')}</td>`;
   }).join('')}<td class="fpts ${kind==='difference'?signClass(player.delta):''}">${kind==='current'?number(player.currentFpts):kind==='projection'?number(player.projectionFpts):signed(player.delta)}</td></tr>`;
-  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP${player.currentPlayer.retainedFromPrevious?'<span class="cached-label">CACHED</span>':''}</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ${baselineLabel()}`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ${baselineLabel()} projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row(`${baselineLabel()} proj.`,'projection')}${row('Difference','difference')}</tbody></table></div></article>`;
+  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP${player.currentPlayer.retainedFromPrevious?'<span class="cached-label">CACHED</span>':''}</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ${baselineLabel()}`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ${baselineLabel()} projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row(`${baselineLabel()} proj.`,'projection')}${row('Difference','difference')}</tbody></table></div>${projectionInputs(player)}</article>`;
 }
 function render(){
   const data=datasets();
@@ -114,7 +125,7 @@ function render(){
   $('coverage-detail').textContent=`${complete.length} of ${data.projections?.players.length||0} projected players · ${data.current?windowName(data.current.metadata.period):'Awaiting current stats'}`;
   $('baseline-detail').textContent=state.demo?'Illustrative values · fictional players':`${data.projections?.metadata.source||'Import Hashtag or DARKO projections'}${data.projections?` · ${data.projections.metadata.season-1}–${String(data.projections.metadata.season).slice(-2)}`:''}`;
   $('data-banner').classList.toggle('ready',!state.demo&&complete.length>0);
-  $('data-banner').innerHTML=state.demo?'<span><b>ILLUSTRATIVE DEMO</b> Fictional players and sample numbers. Import your data to find real opportunities.</span><button class="text-button" id="banner-import">Use my data ↗</button>':`<span><b>${complete.length?'YOUR DATA':data.projections?'PROJECTIONS LOADED':'AWAITING DATA'}</b> ${data.projections?`${data.projections.players.length} ${baselineLabel()} projections · ${data.projections.metadata.capturedAt?'captured':'imported'} ${humanDate(data.projections.metadata.capturedAt||data.projections.metadata.importedAt)}`:'Import Hashtag ROS or DARKO projections.'}${data.current?` · ${data.current.players.length} current-stat rows · ${windowName(data.current.metadata.period)} · ${humanDate(data.current.metadata.updatedAt||data.current.metadata.capturedAt||data.current.metadata.importedAt)}`:' Current stats are still needed to calculate over/underperformance.'}</span><button class="text-button" id="banner-import">Manage sources ↗</button>`;
+  $('data-banner').innerHTML=state.demo?'<span><b>ILLUSTRATIVE DEMO</b> Fictional players and sample numbers. Import your data to find real opportunities.</span><button class="text-button" id="banner-import">Use my data ↗</button>':`<span><b>${complete.length?'YOUR DATA':data.projections?'PROJECTIONS LOADED':'AWAITING DATA'}</b> ${data.projections?`${data.projections.players.length} ${baselineLabel()} projections · ${projectionKey(data.projections)==='combined'?'built':data.projections.metadata.capturedAt?'captured':'imported'} ${humanDate(data.projections.metadata.generatedAt||data.projections.metadata.capturedAt||data.projections.metadata.importedAt)}`:'Import Hashtag ROS or DARKO projections.'}${data.current?` · ${data.current.players.length} current-stat rows · ${windowName(data.current.metadata.period)} · ${humanDate(data.current.metadata.updatedAt||data.current.metadata.capturedAt||data.current.metadata.importedAt)}`:' Current stats are still needed to calculate over/underperformance.'}</span><button class="text-button" id="banner-import">Manage sources ↗</button>`;
   $('banner-import').onclick=()=>openSources('projections');
   renderProjectionLibrary(data,query,position);
   const notices=[];
@@ -127,9 +138,16 @@ function render(){
   if(data.current?.metadata.errors?.length)notices.push(`${data.current.metadata.errors.length} ESPN lookups failed.`);
   for(const source of [data.projections,data.current])if(source?.warnings)notices.push(...source.warnings);
   const details=[...incomplete.map(p=>`${p.name}: missing ${STAT_DEFS.filter(d=>state.scoring[d.key]!==0&&(p.current[d.key]==null||p.projection[d.key]==null)).map(d=>d.label).join(', ')}`),...currentMatches.unmatchedProjections.map(p=>`${p.name}: no current stats`),...currentMatches.ambiguous.map(p=>`${p.projection.name}: ambiguous match`),...currentMatches.unmatchedCurrent.map(p=>`${p.name}: no projection`),...(data.current?.metadata.errors||[])];
-  $('match-notice').hidden=!notices.length;$('match-notice').innerHTML=notices.map(escape).join(' ')+(details.length?`<details><summary>Review excluded players and matches</summary><ul>${details.map(v=>`<li>${escape(v)}</li>`).join('')}</ul></details>`:'');
+  $('match-notice').hidden=!notices.length&&!data.projections?.metadata.coverage;$('match-notice').innerHTML=notices.map(escape).join(' ')+(details.length?`<details><summary>Review excluded players and matches</summary><ul>${details.map(v=>`<li>${escape(v)}</li>`).join('')}</ul></details>`:'')+combinedCoverage(data.projections);
   renderStatsSync();
-  $('source-status').innerHTML=`<span>Projections: <b>${state.demo?'Demo':data.projections?`${data.projections.players.length} imported`:'Not imported'}</b></span><span>Current stats: <b>${state.demo?'Demo':data.current?`${data.current.players.length} imported`:'Not imported'}</b></span><span>Scoring: <b>${Object.keys(state.scoring).every(key=>state.scoring[key]===DEFAULT_SCORING[key])?'Standard points':'Custom points'}</b></span>`;
+  $('source-status').innerHTML=`<span>Projections: <b>${state.demo?'Demo':data.projections?`${data.projections.players.length} ${projectionKey(data.projections)==='combined'?'calculated':'imported'}`:'Not imported'}</b></span><span>Current stats: <b>${state.demo?'Demo':data.current?`${data.current.players.length} imported`:'Not imported'}</b></span><span>Scoring: <b>${Object.keys(state.scoring).every(key=>state.scoring[key]===DEFAULT_SCORING[key])?'Standard points':'Custom points'}</b></span>`;
+}
+
+function combinedCoverage(projections){
+  const coverage=projections?.metadata.provider==='combined'?projections.metadata.coverage:null;
+  if(!coverage)return '';
+  const rows=[...coverage.excluded.map(p=>`${p.name}: ${p.reason}`),...coverage.unusedDarko.map(name=>`${name}: DARKO row without a unique Hashtag match`)];
+  return `<details><summary>Review combined projection coverage</summary><p>${coverage.combined} combined players from ${coverage.hashtag} Hashtag and ${coverage.darko} DARKO rows.</p>${rows.length?`<ul>${rows.map(row=>`<li>${escape(row)}</li>`).join('')}</ul>`:'<p>All imported players have a unique match and positive projected minutes.</p>'}</details>`;
 }
 
 function renderBaselineControls(){
@@ -137,7 +155,9 @@ function renderBaselineControls(){
   $('projection-source').innerHTML=Object.entries(sources).map(([key,source])=>`<option value="${key}">${escape(source.metadata.source||'Imported projections')} · ${source.players.length}</option>`).join('')||'<option value="">Import a baseline first</option>';
   $('projection-source').value=state.projections?projectionKey(state.projections):'';
   $('projection-source').disabled=Object.keys(sources).length<2;
-  $('baseline-title').textContent=projectionKey(state.projections)==='darko'?'DARKO daily':'Rest of season';
+  $('baseline-title').textContent=projectionKey(state.projections)==='combined'?'Combined ROS':projectionKey(state.projections)==='darko'?'DARKO daily':'Rest of season';
+  const combined=sources.combined;
+  $('combined-status').textContent=combined?`${projectionKey(state.projections)==='combined'?'Using':'Ready:'} Combined ROS · ${combined.players.length} players. Minutes: Hashtag only. Stats: 50% Hashtag + 50% DARKO per-minute rates at Hashtag minutes. Hashtag imported ${humanDate(sources.hashtag.metadata.importedAt||sources.hashtag.metadata.capturedAt)}; DARKO imported ${humanDate(sources.darko.metadata.importedAt||sources.darko.metadata.capturedAt)}.`:`Combined ROS: ${combinedError}`;
   $('projection-library-title').textContent=`${baselineLabel()} projection library`;
   const options=positionFilters(state.projections),previous=$('position').value;
   $('position').innerHTML='<option value="">All positions</option>'+options.map(p=>`<option>${p}</option>`).join('');
@@ -160,7 +180,7 @@ $('available-scoring').onclick=()=>{
 };
 
 function openSources(tab='projections'){setSourceTab(tab);$('sources-dialog').showModal();}
-function setSourceTab(tab){sourceTab=tab;document.querySelectorAll('[data-source-tab]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.sourceTab===tab)));$('import-form').hidden=tab==='worker';$('worker-form').hidden=tab!=='worker';$('import-message').textContent='';$('basis-confirm').checked=false;$('import-text').value='';$('import-file').value='';$('file-name').textContent='or paste page source / a table below';$('detected-import').hidden=true;$('page-scoring-label').hidden=true;$('import-limits').hidden=true;$('current-period-label').hidden=tab==='projections';$('import-submit').textContent=tab==='current'?'Import current stats':'Import projections';$('basis-confirm-text').textContent=tab==='current'?'These are per-game current stats for the season and window selected above.':'These are per-game projections for the season selected above.';$('import-instruction').innerHTML=tab==='current'?'On Hashtag, select <b>2026–27 Regular Season Rankings</b>, <b>Per-game Average</b>, and <b>Top 300</b>. Save or copy the page source and import it here. JSON, CSV, and copied tables also work.':'<b>DARKO:</b> Choose the Fantasy Lab CSV downloaded from <a href="https://www.darko.app/projections" target="_blank" rel="noreferrer">darko.app ↗</a>. <b>Hashtag:</b> select pure rest-of-season projections, Per-game Average, and Top 300, then import your saved page or JSON. Each source is saved separately; use Projection source to switch baselines.';$('import-season').value=state.season;$('worker-url').value=state.workerUrl;$('worker-period').value=state.workerPeriod;$('worker-season').value=state.season;}
+function setSourceTab(tab){sourceTab=tab;document.querySelectorAll('[data-source-tab]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.sourceTab===tab)));$('import-form').hidden=tab==='worker';$('worker-form').hidden=tab!=='worker';$('import-message').textContent='';$('basis-confirm').checked=false;$('import-text').value='';$('import-file').value='';$('file-name').textContent='or paste page source / a table below';$('detected-import').hidden=true;$('page-scoring-label').hidden=true;$('import-limits').hidden=true;$('projection-provider').value='auto';$('projection-provider-label').hidden=tab!=='projections';$('current-period-label').hidden=tab==='projections';$('import-submit').textContent=tab==='current'?'Import current stats':'Import projections';$('basis-confirm-text').textContent=tab==='current'?'These are per-game current stats for the season and window selected above.':'These are per-game projections for the season selected above.';$('import-instruction').innerHTML=tab==='current'?'On Hashtag, select <b>2026–27 Regular Season Rankings</b>, <b>Per-game Average</b>, and <b>Top 300</b>. Save or copy the page source and import it here. JSON, CSV, and copied tables also work.':'<b>DARKO:</b> Choose the Fantasy Lab CSV downloaded from <a href="https://www.darko.app/projections" target="_blank" rel="noreferrer">darko.app ↗</a>. <b>Hashtag:</b> select pure rest-of-season projections, Per-game Average, and Top 300, then import your saved page or JSON. Import each file separately for the same season. Combined ROS is built locally when both are available; use Projection source to switch baselines.';$('import-season').value=state.season;$('worker-url').value=state.workerUrl;$('worker-period').value=state.workerPeriod;$('worker-season').value=state.season;}
 document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>button.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
 $('sources-open').onclick=()=>openSources();$('method-open').onclick=()=>$('method-dialog').showModal();
@@ -181,6 +201,7 @@ $('import-form').onsubmit=event=>{
   event.preventDefault();
   try{
     const imported=readImport($('import-text').value),metadata=imported.metadata,selectedSeason=Number($('import-season').value);
+    if(sourceTab==='projections'&&metadata.provider==='combined')throw new Error('Import the Hashtag and DARKO source files separately. Combined ROS is rebuilt from those inputs.');
     if(metadata.kind&&((sourceTab==='projections'&&/current|actual/i.test(metadata.kind))||(sourceTab==='current'&&/projection/i.test(metadata.kind))))throw new Error('This file belongs in the other source tab. Check the exported dataset kind.');
     if(metadata.horizon&&sourceTab==='projections'&&/full.?season|pre.?season/i.test(metadata.horizon))throw new Error('This file is marked full-season. Export pure rest-of-season projections for this baseline.');
     if(sourceTab==='projections'&&/blend/i.test(JSON.stringify(metadata)))throw new Error('This source is marked BLEND. Export pure ROS projections.');
@@ -188,17 +209,19 @@ $('import-form').onsubmit=event=>{
     if(sourceTab==='current'&&metadata.period&&String(metadata.period)!==$('import-period').value)throw new Error(`The file uses period ${metadata.period}; change the selected current stats window to match.`);
     if(state.demo){state.projections=null;state.current=null;state.demo=false;}
     generation++;
+    const useCombined=projectionKey(state.projections)==='combined'||!state.projectionSources?.combined;
     const dataset={...imported,metadata:{...metadata,source:metadata.source||'Imported table',season:selectedSeason,basis:'per-game',importedAt:new Date().toISOString(),...(sourceTab==='projections'?{horizon:metadata.horizon||'rest-of-season',managedSnapshot:false,snapshotId:null}:{period:$('import-period').value})},warnings:imported.warnings.filter(w=>!w.startsWith('Confirm these stats'))};
     const importedScoring=$('page-scoring').checked&&metadata.scoring?{...state.scoring,...metadata.scoring}:null;
     if(sourceTab==='projections')state=rememberProjection(state,dataset,importedScoring);else{state.current=dataset;if(importedScoring)state.scoring=importedScoring;if(state.projections)state=rememberProjection(state,state.projections);}
+    if(sourceTab==='projections')rebuildCombined(useCombined);
     state.season=selectedSeason;persist();render();
-    $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'&&/hashtag/i.test(metadata.source||'')?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
+    $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'&&/hashtag/i.test(metadata.source||'')?' Check coverage: Hashtag free access is limited to 30 players.':''}${sourceTab==='projections'&&state.projectionSources?.combined?` Combined ROS ready: ${state.projectionSources.combined.players.length} players.`:''}`;
     $('import-text').value='';$('basis-confirm').checked=false;
-    toast(`${imported.players.length} ${sourceTab==='projections'?`${baselineLabel()} projections`:'current-stat rows'} imported.`);
+    toast(`${imported.players.length} ${sourceTab==='projections'?`${projectionLabel(dataset)} projections`:'current-stat rows'} imported.${sourceTab==='projections'&&projectionKey(state.projections)==='combined'?` Combined ROS: ${state.projections.players.length} players.`:''}`);
     if(sourceTab==='projections'&&(!state.current||isLiveStats(state.current)))void refreshCurrentStats();
   }catch(error){$('import-message').className='form-message';$('import-message').textContent=error.message;}
 };
-$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,projectionSources:{},sourceScoring:{},initialDataCleared:true};persist();statsMessage='';statsError=false;render();$('import-message').textContent='Imported data cleared from this browser.';};
+$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,projectionSources:{},sourceScoring:{},initialDataCleared:true};persist();statsMessage='';statsError=false;rebuildCombined();render();$('import-message').textContent='Imported data cleared from this browser.';};
 
 function renderStatsSync(){
   const current=state.current;
@@ -295,5 +318,6 @@ setInterval(maybeRefreshStats,LIVE_REFRESH_MS);
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('export-results').onclick=()=>{if(!currentResults.length){toast('No matched players to export.');return;}const defs=[...STAT_DEFS,...PERCENT_DEFS];const headers=['Player','Team','Position','Games','Source','Row','FPTS',...defs.map(def=>def.label)];const rows=[headers];for(const player of currentResults){for(const kind of ['current','projection','difference'])rows.push([player.name,player.currentPlayer.team||player.team,player.position,player.games,state.projections.metadata.source||'Imported data',kind,kind==='current'?player.currentFpts:kind==='projection'?player.projectionFpts:player.delta,...defs.map(def=>kind==='difference'?player.statDeltas[def.key]:statValue(player[kind],def.key))]);}const quote=value=>`"${String(value??'').replace(/"/g,'""')}"`;download(`value-lab-${state.demo?'DEMO-':''}${new Date().toISOString().slice(0,10)}.csv`,rows.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
 await loadInitialData();
+persist();
 render();
 maybeRefreshStats();

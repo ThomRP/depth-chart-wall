@@ -1,15 +1,32 @@
-import { STAT_DEFS } from './engine.js?v=darko-1';
+import { STAT_DEFS } from './engine.js?v=combined-1';
+import { buildCombinedProjection } from './combined-projections.js?v=combined-1';
 
 export function projectionKey(projections) {
   const meta = projections?.metadata || {};
+  if (meta.provider === 'combined') return 'combined';
   if (meta.provider === 'darko' || /darko/i.test(meta.source || '')) return 'darko';
-  if (/hashtag/i.test(meta.source || '')) return 'hashtag';
+  if (meta.provider === 'hashtag' || /hashtag/i.test(meta.source || '')) return 'hashtag';
   return 'imported';
 }
 
 export function projectionLabel(projections) {
+  if (projectionKey(projections) === 'combined') return 'Combined ROS';
   if (projectionKey(projections) === 'darko') return 'DARKO';
   return projections?.metadata.horizon === 'daily' ? 'Daily' : 'ROS';
+}
+
+// Saved Hashtag HTML/JSON and the DARKO CSV identify themselves. A plain copied
+// table can be labeled explicitly by the user instead of guessing its provider.
+export function identifyProjectionImport(imported, provider = 'auto') {
+  if (provider === 'auto' || imported.metadata.provider === 'combined') return imported;
+  if (!['hashtag','darko'].includes(provider)) throw new Error('Choose Hashtag ROS, DARKO, or automatic detection.');
+  const detected = projectionKey(imported);
+  if (detected !== 'imported' && detected !== provider) throw new Error('The selected projection provider conflicts with the file. Use automatic detection or select the matching provider.');
+  return { ...imported, metadata: {
+    ...imported.metadata, provider,
+    source: provider === 'hashtag' ? 'Hashtag Basketball' : 'DARKO Fantasy Lab',
+    horizon: imported.metadata.horizon || (provider === 'hashtag' ? 'rest-of-season' : 'daily')
+  } };
 }
 
 // Keep the existing active baseline and scoring when upgrading older browsers.
@@ -24,9 +41,31 @@ export function rememberProjection(state, projections, scoring) {
   }
   const key = projectionKey(projections);
   projectionSources[key] = projections;
-  const selectedScoring = { ...(scoring || sourceScoring[key] || state.scoring) };
+  const selectedScoring = { ...(scoring || sourceScoring[key] || (key === 'combined' ? sourceScoring.hashtag : null) || state.scoring) };
   sourceScoring[key] = selectedScoring;
   return { ...state, projections, scoring: selectedScoring, projectionSources, sourceScoring };
+}
+
+// Raw imports remain manual. The local derived baseline is rebuilt whenever an
+// input changes, and never survives a season mismatch as a stale calculation.
+export function rebuildCombinedProjection(state, { selectWhenReady = false } = {}) {
+  if (state.projections) state = rememberProjection(state, state.projections);
+  const sources = { ...state.projectionSources };
+  try {
+    const combined = buildCombinedProjection(sources.hashtag, sources.darko);
+    const select = selectWhenReady || projectionKey(state.projections) === 'combined';
+    const next = { ...state, projectionSources: { ...sources, combined } };
+    return { state: select ? rememberProjection(next, combined) : next, error: null };
+  } catch (error) {
+    let next = state;
+    if (projectionKey(state.projections) === 'combined') {
+      const fallback = sources.hashtag || sources.darko || sources.imported;
+      next = fallback ? rememberProjection(state, fallback) : { ...state, projections: null };
+    }
+    const projectionSources = { ...next.projectionSources };
+    delete projectionSources.combined;
+    return { state: { ...next, projectionSources }, error: error.message };
+  }
 }
 
 export function unavailableScoredCategories(projections, scoring) {

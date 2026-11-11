@@ -1,4 +1,4 @@
-import { normalizeName } from './engine.js';
+import { normalizeName } from './engine.js?v=darko-1';
 import playerDirectory from './player-directory.js';
 
 const directoryByName = new Map();
@@ -9,7 +9,7 @@ for (const player of playerDirectory) {
 }
 
 // Injured players can disappear from the existing depth-chart feed. Stable IDs
-// verified against official ESPN profiles allow requesting their game logs too.
+// checked against ESPN profiles or linked public identity records allow requesting their game logs too.
 // These records contain identity only, never guessed current stats or teams.
 const ESPN_PROFILES = Object.freeze({
   anthonyedwards: { id: '4594268', source: 'https://www.espn.co.uk/nba/player/_/id/4594268/anthony-edwards' },
@@ -27,7 +27,19 @@ const ESPN_PROFILES = Object.freeze({
   markwilliams: { id: '4701232', source: 'https://www.espn.co.uk/nba/player/_/id/4701232/mark-williams' },
   kevinporter: { id: '4397140', source: 'https://espndeportes.espn.com/nba/player/gamelog/_/id/4397140/kevin-porter-jr' },
   mosesmoody: { id: '4432171', source: 'https://www.espn.com/nba/player/_/id/4432171/moses-moody' },
-  jordanmiller: { id: '4396818', source: 'https://africa.espn.com/nba/player/gamelog/_/id/4396818/jordan-miller' }
+  jordanmiller: { id: '4396818', source: 'https://africa.espn.com/nba/player/gamelog/_/id/4396818/jordan-miller' },
+  dontedivincenzo: { id: '3934673', source: 'https://www.espn.com/nba/player/_/id/3934673/donte-divincenzo' },
+  jamirwatkins: { id: '4606840', source: 'https://thesportingpage.com/nba/players/4606840/' },
+  leakyblack: { id: '4395650', source: 'https://www.espn.com/nba/player/stats/_/id/4395650/leaky-black' },
+  patrickwilliams: { id: '4431687', source: 'https://espndeportes.espn.com/nba/player/_/id/4431687/patrick-williams' },
+  joshgreen: { id: '4432811', source: 'https://dunkapi.com/players/josh-green-4432811' },
+  petenance: { id: '4397233', source: 'https://thesportingpage.com/nba/players/4397233/' },
+  mouhamedgueye: { id: '4712863', source: 'https://apify.com/pipiagent/sports-injury-reports' },
+  cormacryan: { id: '4397114', source: 'https://africa.espn.com/nba/player/_/id/4397114/cormac-ryan' },
+  arielhukporti: { id: '4871141', source: 'https://dynastyhoopshq.com/?ngb_player=527' },
+  jalenslawson: { id: '4398207', source: 'https://sidelinewire.com/nba/players/4398207' },
+  johnnyfurphy: { id: '5157066', source: 'https://www.espn.com/nba/player/stats/_/id/5157066/johnny-furphy' },
+  rayanrupert: { id: '5099752', source: 'https://www.wikidata.org/wiki/Q114426424' }
 });
 
 export function rosterForProjections(projections, roster = []) {

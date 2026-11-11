@@ -23,10 +23,23 @@ A weekly export is a practical routine. Update sooner when Hashtag revises proje
 
 Imports, scoring, and the minimum projected FPTS filter stay in the current browser profile. Keep the downloaded JSON files so you can import the same snapshot on another device or browser. A manual import becomes your browser's selected baseline and is preserved when the hosted default snapshot changes.
 
+## Importing and updating DARKO
+
+1. Open [DARKO Fantasy Lab](https://www.darko.app/projections), clear any player/team filters, and click **Download CSV**. No console script is needed.
+2. In Value Lab, choose **Data sources → Projections → Choose page source / data**, then select the CSV, such as `darko-fantasy-custom.csv`.
+3. Check the detected **DARKO Fantasy Lab** label and player count. Select the season ending year (**2027** for 2026–27); the CSV does not contain a season or projection date.
+4. Confirm the per-game checkbox and click **Import projections**. Close Data sources to see the lists. Current NBA stats load automatically.
+5. If a scoring warning appears, click **Review available-category scoring**, review the proposed weights, then **Apply scoring**. The supplied CSV omits **FGM, FGA, FTM, and FTA**. Those weights must be zero to calculate DARKO FPTS from this file. This uses reduced scoring for both current and projected stats; it cannot reproduce a league that awards points for those omitted categories. To use full shooting-volume scoring, supply projections with those columns instead.
+6. Use **Projection source** above the summary to switch between saved Hashtag and DARKO baselines. Each keeps its own scoring settings, so reduced DARKO scoring does not overwrite your Hashtag weights.
+
+For updates, download a fresh CSV and repeat the import. It replaces the saved DARKO baseline while preserving Hashtag and your source-specific scoring. The CSV's precomputed **FP/G** has no scoring coefficients attached. Value Lab retains it in downloaded JSON for reference and recalculates comparison FPTS using the weights shown in **League scoring**.
+
+DARKO is a **daily** projection using projected minutes and pace; it is labeled separately from Hashtag ROS. Its positions are broad **G/F/C**. The position filter follows those groups without assigning PG/SG/SF/PF eligibility. Enable **Shooting stats** to see FG% and FT%; their differences are percentage points and do not add fantasy points.
+
 ## Everyday controls
 
-- **League scoring** sets the points awarded or deducted per statistic.
-- **Min. projected FPTS** hides players below your chosen ROS points-per-game level. Enter `25` for projections of at least 25 FPTS per game. Use the arrows to change the value by one; clear it to remove the bound.
+- **League scoring** sets the points awarded or deducted per statistic for the selected projection source.
+- **Min. projected FPTS** hides players below your selected baseline's points-per-game level. Enter `25` for projections of at least 25 FPTS per game. Use the arrows to change the value by one; clear it to remove the bound.
 - **NBA stats window** chooses season-to-date, last 14 games, or last 8 games. These recent windows count appearances, not calendar days.
 - Search, position, and minimum-games filters narrow both comparison lists. CSV export uses the filtered results.
 - A **CACHED** label means a player still shows the previous current-stat value because its latest refresh did not succeed. Unavailable/missing data is reported above the lists.

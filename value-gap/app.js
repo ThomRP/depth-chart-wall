@@ -1,6 +1,7 @@
-import { STAT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers } from './engine.js';
+import { STAT_DEFS, PERCENT_DEFS, DEFAULT_SCORING, parseImport, computeFpts, matchPlayers, comparePlayers, statValue } from './engine.js?v=darko-1';
 import { parseHashtagHtml, looksLikeHashtagHtml } from './html-import.js';
-import { rosterForProjections } from './identities.js?v=roster-fix-1';
+import { rosterForProjections } from './identities.js?v=darko-1';
+import { projectionKey, projectionLabel, rememberProjection, unavailableScoredCategories, matchesPosition, positionFilters } from './projection-sources.js?v=darko-1';
 import { isHostedProjection, applyHostedSnapshot } from './snapshots.js';
 import { fetchJson, fetchPlayerStats, isLiveStats } from './stats-client.js';
 
@@ -24,6 +25,10 @@ state.demo=false;
 state.workerUrl ||= DEFAULT_WORKER_URL;
 state.minProjectedFpts=Number.isFinite(state.minProjectedFpts)&&state.minProjectedFpts>=0?state.minProjectedFpts:null;
 $('min-projected-fpts').value=state.minProjectedFpts??'';
+if(state.projections)state=rememberProjection(state,state.projections);
+const baselineLabel=()=>projectionLabel(state.projections);
+const displayDefs=()=>[...STAT_DEFS.filter((def,i)=>i<8||$('shooting').checked||state.scoring[def.key]!==0),...($('shooting').checked?PERCENT_DEFS:[])];
+const statNumber=(value,def,difference=false)=>def.percentage?(value==null?'—':`${difference?signed(value*100):number(value*100)}${difference?' pp':'%'}`):(difference?signed(value):number(value));
 function datasets(){return state;}
 function persist(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,state}));}catch{toast('Browser storage unavailable. Keep your import files to restore this session.');}}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
@@ -40,7 +45,11 @@ function previewImport(){
     $('page-scoring-label').hidden=!meta.scoring;
     $('page-scoring').checked=Boolean(meta.scoring)&&!meta.unsupportedScoring?.length;
     $('page-scoring').disabled=Boolean(meta.unsupportedScoring?.length);
-  }catch{preview.hidden=true;$('page-scoring-label').hidden=true;$('page-scoring').checked=false;}
+    const darko=meta.provider==='darko';
+    $('import-limits').hidden=!darko;
+    $('import-limits').textContent=darko?'DARKO daily baseline · FGM/FGA/FTM/FTA and scoring weights are absent from this CSV. FP/G is reference only. Your existing scoring is preserved; incompatible weights will be flagged after import. Choose the season below (2026–27 = 2027).':'';
+    if(sourceTab==='projections')$('basis-confirm-text').textContent=darko?'These are DARKO per-game projections for the season selected above.':'I’ve selected pure rest-of-season projections and per-game averages.';
+  }catch{preview.hidden=true;$('page-scoring-label').hidden=true;$('page-scoring').checked=false;$('import-limits').hidden=true;}
 }
 let importPreviewTimer;
 $('import-text').addEventListener('input',()=>{clearTimeout(importPreviewTimer);importPreviewTimer=setTimeout(previewImport,250);});
@@ -49,14 +58,14 @@ function renderProjectionLibrary(data,query,position){
   const show=Boolean(data.projections&&!data.current);
   $('projection-library').hidden=!show;
   if(!show)return;
-  const projections=data.projections.players.filter(p=>(!query||`${p.name} ${p.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))).map(p=>({...p,fpts:computeFpts(p.stats,state.scoring)})).filter(p=>state.minProjectedFpts===null||(p.fpts!==null&&p.fpts>=state.minProjectedFpts));
+  const projections=data.projections.players.filter(p=>(!query||`${p.name} ${p.team}`.toLowerCase().includes(query))&&matchesPosition(p.position,position)).map(p=>({...p,fpts:computeFpts(p.stats,state.scoring)})).filter(p=>state.minProjectedFpts===null||(p.fpts!==null&&p.fpts>=state.minProjectedFpts));
   projections.sort((a,b)=>(b.fpts??-Infinity)-(a.fpts??-Infinity)||a.name.localeCompare(b.name));
   $('projection-library-count').textContent=`${projections.length} / ${data.projections.players.length}`;
-  const defs=STAT_DEFS.filter((def,i)=>i<8||$('shooting').checked||state.scoring[def.key]!==0);
-  $('projection-library-table').innerHTML=`<caption class="sr-only">Imported NBA rest-of-season projections. Current stats have not been added yet.</caption><thead><tr><th scope="col">PLAYER</th><th scope="col">TEAM</th><th scope="col">POS</th>${defs.map(d=>`<th scope="col">${d.label}</th>`).join('')}<th scope="col">FPTS</th></tr></thead><tbody>${projections.map(p=>`<tr><th scope="row">${escape(p.name)}</th><td>${escape(p.team)}</td><td>${escape(p.position)}</td>${defs.map(d=>`<td>${number(p.stats[d.key])}</td>`).join('')}<td class="projection-fpts">${number(p.fpts)}</td></tr>`).join('')}</tbody>`;
+  const defs=displayDefs();
+  $('projection-library-table').innerHTML=`<caption class="sr-only">Imported NBA ${baselineLabel()} projections. Current stats have not been added yet.</caption><thead><tr><th scope="col">PLAYER</th><th scope="col">TEAM</th><th scope="col">POS</th>${defs.map(d=>`<th scope="col">${d.label}</th>`).join('')}<th scope="col">FPTS</th></tr></thead><tbody>${projections.map(p=>`<tr><th scope="row">${escape(p.name)}</th><td>${escape(p.team)}</td><td>${escape(p.position)}</td>${defs.map(d=>`<td>${statNumber(statValue(p.stats,d.key),d)}</td>`).join('')}<td class="projection-fpts">${number(p.fpts)}</td></tr>`).join('')}</tbody>`;
 }
 $('library-current-open').onclick=()=>refreshCurrentStats();
-$('download-projections').onclick=()=>{if(state.projections)download('hashtag-ros-projections.json',JSON.stringify(state.projections,null,2),'application/json');};
+$('download-projections').onclick=()=>{if(state.projections)download(`${projectionKey(state.projections)}-projections.json`,JSON.stringify(state.projections,null,2),'application/json');};
 
 async function loadInitialData(){
   if(state.initialDataCleared||(state.projections&&!isHostedProjection(state.projections)))return;
@@ -66,7 +75,7 @@ async function loadInitialData(){
     const previous=state.projections;
     const result=applyHostedSnapshot(state,await response.json());
     if(!result.changed)return;
-    state=result.state;persist();
+    state=rememberProjection(result.state,result.state.projections);persist();
     if(previous)toast(`Saved ROS projections updated: ${state.projections.players.length} players.`);
   }catch{
     if(state.projections)toast('The saved projection update could not be loaded. Your previous projections are still available.');
@@ -74,37 +83,38 @@ async function loadInitialData(){
 }
 
 function playerCard(player,index){
-  const defs = STAT_DEFS.filter((def,i)=> i<8 || $('shooting').checked || state.scoring[def.key]!==0);
+  const defs = displayDefs();
   const initial = player.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('');
   const row=(label,kind)=>`<tr class="${kind}"><td>${label}</td>${defs.map(def=>{
-    const value=kind==='difference'?player.statDeltas[def.key]:player[kind][def.key];
+    const value=kind==='difference'?player.statDeltas[def.key]:statValue(player[kind],def.key);
     const direction=player.statPerformance[def.key];
-    return `<td class="${kind==='difference'?signClass(direction):''}" title="${escape(def.name)}${kind==='difference'?' · current minus projection':''}">${kind==='difference'?signed(value):number(value)}</td>`;
+    return `<td class="${kind==='difference'?signClass(direction):''}" title="${escape(def.name)}${kind==='difference'?' · current minus projection':''}">${statNumber(value,def,kind==='difference')}</td>`;
   }).join('')}<td class="fpts ${kind==='difference'?signClass(player.delta):''}">${kind==='current'?number(player.currentFpts):kind==='projection'?number(player.projectionFpts):signed(player.delta)}</td></tr>`;
-  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP${player.currentPlayer.retainedFromPrevious?'<span class="cached-label">CACHED</span>':''}</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ROS`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ROS projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row('ROS proj.','projection')}${row('Difference','difference')}</tbody></table></div></article>`;
+  return `<article class="player-card"><div class="player-top"><span class="player-rank">${String(index+1).padStart(2,'0')}</span><span class="avatar" aria-hidden="true">${escape(initial)}</span><div><h3 class="player-name">${escape(player.name)}</h3><div class="player-meta"><b>${escape(player.currentPlayer.team||player.team||'—')}</b><span class="meta-dot"></span>${escape(player.position||'—')}<span class="meta-dot"></span>${player.games??'—'} GP${player.currentPlayer.retainedFromPrevious?'<span class="cached-label">CACHED</span>':''}</div></div><div class="player-gap"><div class="gap-badge">${signed(player.delta)}<span>FPTS / G</span></div><div class="gap-percentage">${player.gapPercent==null?'No % baseline':`${signed(player.gapPercent)}% vs ${baselineLabel()}`}</div></div></div><div class="stats-wrap" tabindex="0" role="region" aria-label="${escape(player.name)} stat comparison"><table class="stats-table ${defs.length>8?'with-shooting':''}"><caption class="sr-only">${escape(player.name)}, per-game stats and ${baselineLabel()} projection</caption><thead><tr><th scope="col">PER GAME</th>${defs.map(def=>`<th scope="col" title="${escape(def.name)}">${def.label}</th>`).join('')}<th scope="col" class="fpts">FPTS</th></tr></thead><tbody>${row('Current','current')}${row(`${baselineLabel()} proj.`,'projection')}${row('Difference','difference')}</tbody></table></div></article>`;
 }
 function render(){
   const data=datasets();
+  renderBaselineControls();
   const seasonMismatch=data.projections&&data.current&&String(data.projections.metadata.season)!==String(data.current.metadata.season);
   currentMatches = data.projections&&data.current&&!seasonMismatch?matchPlayers(data.projections.players,data.current.players):{players:[],unmatchedProjections:[],unmatchedCurrent:[],ambiguous:[]};
   const compared=comparePlayers(currentMatches,state.scoring);
   const complete=compared.filter(p=>p.delta!==null);
   const incomplete=compared.filter(p=>p.delta===null);
   const query=$('search').value.toLowerCase().trim(),position=$('position').value,minGames=Number($('min-games').value);
-  const filtered=complete.filter(p=>(!query||`${p.name} ${p.team} ${p.currentPlayer.team}`.toLowerCase().includes(query))&&(!position||(p.position||'').split(/[^A-Z]+/).includes(position))&&(minGames===0||(p.games!==null&&p.games>=minGames))&&(state.minProjectedFpts===null||p.projectionFpts>=state.minProjectedFpts));
+  const filtered=complete.filter(p=>(!query||`${p.name} ${p.team} ${p.currentPlayer.team}`.toLowerCase().includes(query))&&matchesPosition(p.position,position)&&(minGames===0||(p.games!==null&&p.games>=minGames))&&(state.minProjectedFpts===null||p.projectionFpts>=state.minProjectedFpts));
   const sortKey=$('sort').value==='percent'?'gapPercent':'delta';
   const magnitude=player=>Number.isFinite(player[sortKey])?Math.abs(player[sortKey]):-Infinity;
   filtered.sort((a,b)=>magnitude(b)-magnitude(a)||a.name.localeCompare(b.name));
   currentResults=filtered;
   const under=filtered.filter(p=>p.delta<-.000001),over=filtered.filter(p=>p.delta>.000001),neutral=complete.filter(p=>Math.abs(p.delta)<=.000001);
-  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Adjust your search, position, or minimum games / projected FPTS.':data.projections?'Your ROS projections are loaded below. Current NBA stats load automatically; use Refresh NBA stats to retry.':'Import ROS projections and current stats in Data sources.'}</div>`;
+  $('under-list').innerHTML=under.length?under.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':unavailableScoredCategories(data.projections,state.scoring).length?'Scoring needs attention':data.projections?'Add current stats to compare':'Import your NBA data'}</b>${complete.length?'Adjust your search, position, or minimum games / projected FPTS.':unavailableScoredCategories(data.projections,state.scoring).length?'Review the missing scoring categories above to calculate FPTS.':data.projections?'Your projections are loaded. Current NBA stats load automatically; use Refresh NBA stats to retry.':'Import projections in Data sources.'}</div>`;
   $('over-list').innerHTML=over.length?over.map(playerCard).join(''):`<div class="empty-list"><b>${complete.length?'No players match these filters':data.projections?'Waiting for current production':'Your next sell-high starts here'}</b>${complete.length?'Adjust your search, position, or minimum games / projected FPTS.':'Both sources must be matched before players can be ranked.'}</div>`;
   $('summary-count').textContent=complete.length;$('summary-under').textContent=complete.filter(p=>p.delta<-.000001).length;$('summary-over').textContent=complete.filter(p=>p.delta>.000001).length;
   $('under-count').textContent=under.length;$('over-count').textContent=over.length;
   $('coverage-detail').textContent=`${complete.length} of ${data.projections?.players.length||0} projected players · ${data.current?windowName(data.current.metadata.period):'Awaiting current stats'}`;
-  $('baseline-detail').textContent=state.demo?'Illustrative values · fictional players':`${data.projections?.metadata.source||'Import Hashtag projections'}${data.projections?` · ${data.projections.metadata.season-1}–${String(data.projections.metadata.season).slice(-2)}`:''}`;
+  $('baseline-detail').textContent=state.demo?'Illustrative values · fictional players':`${data.projections?.metadata.source||'Import Hashtag or DARKO projections'}${data.projections?` · ${data.projections.metadata.season-1}–${String(data.projections.metadata.season).slice(-2)}`:''}`;
   $('data-banner').classList.toggle('ready',!state.demo&&complete.length>0);
-  $('data-banner').innerHTML=state.demo?'<span><b>ILLUSTRATIVE DEMO</b> Fictional players and sample numbers. Import your data to find real opportunities.</span><button class="text-button" id="banner-import">Use my data ↗</button>':`<span><b>${complete.length?'YOUR DATA':data.projections?'PROJECTIONS LOADED':'AWAITING DATA'}</b> ${data.projections?`${data.projections.players.length} ROS projections · ${data.projections.metadata.capturedAt?'captured':'imported'} ${humanDate(data.projections.metadata.capturedAt||data.projections.metadata.importedAt)}`:'Import your rest-of-season projections.'}${data.current?` · ${data.current.players.length} current-stat rows · ${windowName(data.current.metadata.period)} · ${humanDate(data.current.metadata.updatedAt||data.current.metadata.capturedAt||data.current.metadata.importedAt)}`:' Current stats are still needed to calculate over/underperformance.'}</span><button class="text-button" id="banner-import">Manage sources ↗</button>`;
+  $('data-banner').innerHTML=state.demo?'<span><b>ILLUSTRATIVE DEMO</b> Fictional players and sample numbers. Import your data to find real opportunities.</span><button class="text-button" id="banner-import">Use my data ↗</button>':`<span><b>${complete.length?'YOUR DATA':data.projections?'PROJECTIONS LOADED':'AWAITING DATA'}</b> ${data.projections?`${data.projections.players.length} ${baselineLabel()} projections · ${data.projections.metadata.capturedAt?'captured':'imported'} ${humanDate(data.projections.metadata.capturedAt||data.projections.metadata.importedAt)}`:'Import Hashtag ROS or DARKO projections.'}${data.current?` · ${data.current.players.length} current-stat rows · ${windowName(data.current.metadata.period)} · ${humanDate(data.current.metadata.updatedAt||data.current.metadata.capturedAt||data.current.metadata.importedAt)}`:' Current stats are still needed to calculate over/underperformance.'}</span><button class="text-button" id="banner-import">Manage sources ↗</button>`;
   $('banner-import').onclick=()=>openSources('projections');
   renderProjectionLibrary(data,query,position);
   const notices=[];
@@ -122,8 +132,35 @@ function render(){
   $('source-status').innerHTML=`<span>Projections: <b>${state.demo?'Demo':data.projections?`${data.projections.players.length} imported`:'Not imported'}</b></span><span>Current stats: <b>${state.demo?'Demo':data.current?`${data.current.players.length} imported`:'Not imported'}</b></span><span>Scoring: <b>${Object.keys(state.scoring).every(key=>state.scoring[key]===DEFAULT_SCORING[key])?'Standard points':'Custom points'}</b></span>`;
 }
 
+function renderBaselineControls(){
+  const sources=state.projectionSources||{};
+  $('projection-source').innerHTML=Object.entries(sources).map(([key,source])=>`<option value="${key}">${escape(source.metadata.source||'Imported projections')} · ${source.players.length}</option>`).join('')||'<option value="">Import a baseline first</option>';
+  $('projection-source').value=state.projections?projectionKey(state.projections):'';
+  $('projection-source').disabled=Object.keys(sources).length<2;
+  $('baseline-title').textContent=projectionKey(state.projections)==='darko'?'DARKO daily':'Rest of season';
+  $('projection-library-title').textContent=`${baselineLabel()} projection library`;
+  const options=positionFilters(state.projections),previous=$('position').value;
+  $('position').innerHTML='<option value="">All positions</option>'+options.map(p=>`<option>${p}</option>`).join('');
+  $('position').value=options.includes(previous)?previous:'';
+  const missing=unavailableScoredCategories(state.projections,state.scoring);
+  $('scoring-compatibility').hidden=!missing.length;
+  $('scoring-compatibility-text').textContent=missing.length?`${baselineLabel()} projections lack ${missing.map(d=>d.label).join(', ')}. Your current scoring needs these stats, so FPTS cannot be calculated. Import a file containing them, or compare using only available categories. Reduced scoring applies to both rows and is saved for this source.`:'';
+  $('position-note').hidden=options.includes('PG');
+}
+$('projection-source').onchange=event=>{
+  const selected=state.projectionSources?.[event.target.value];
+  if(!selected)return;
+  generation++;state=rememberProjection(state,selected);state.season=Number(selected.metadata.season);persist();render();
+  if(!state.current||isLiveStats(state.current))void refreshCurrentStats();
+};
+$('available-scoring').onclick=()=>{
+  const missing=unavailableScoredCategories(state.projections,state.scoring),scoring={...state.scoring};
+  for(const def of missing)scoring[def.key]=0;
+  openScoring(scoring,`Review reduced scoring: ${missing.map(d=>d.label).join(', ')} will be set to 0 for both current and projected FPTS. Apply to use these weights for this source.`);
+};
+
 function openSources(tab='projections'){setSourceTab(tab);$('sources-dialog').showModal();}
-function setSourceTab(tab){sourceTab=tab;document.querySelectorAll('[data-source-tab]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.sourceTab===tab)));$('import-form').hidden=tab==='worker';$('worker-form').hidden=tab!=='worker';$('import-message').textContent='';$('basis-confirm').checked=false;$('import-text').value='';$('import-file').value='';$('file-name').textContent='or paste page source / a table below';$('detected-import').hidden=true;$('page-scoring-label').hidden=true;$('current-period-label').hidden=tab==='projections';$('import-submit').textContent=tab==='current'?'Import current stats':'Import projections';$('basis-confirm-text').textContent=tab==='current'?'These are per-game current stats for the season and window selected above.':'I’ve selected pure rest-of-season projections and per-game averages.';$('import-instruction').innerHTML=tab==='current'?'On Hashtag, select <b>2026–27 Regular Season Rankings</b>, <b>Per-game Average</b>, and <b>Top 300</b>. Save or copy the page source and import it here. JSON, CSV, and copied tables also work.':'On Hashtag, select pure <b>rest-of-season projections</b>, <b>Per-game Average</b>, and <b>Top 300</b>. Save or copy the page source and import it directly. The app reads only table data; scripts and account fields are discarded.';$('import-season').value=state.season;$('worker-url').value=state.workerUrl;$('worker-period').value=state.workerPeriod;$('worker-season').value=state.season;}
+function setSourceTab(tab){sourceTab=tab;document.querySelectorAll('[data-source-tab]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.sourceTab===tab)));$('import-form').hidden=tab==='worker';$('worker-form').hidden=tab!=='worker';$('import-message').textContent='';$('basis-confirm').checked=false;$('import-text').value='';$('import-file').value='';$('file-name').textContent='or paste page source / a table below';$('detected-import').hidden=true;$('page-scoring-label').hidden=true;$('import-limits').hidden=true;$('current-period-label').hidden=tab==='projections';$('import-submit').textContent=tab==='current'?'Import current stats':'Import projections';$('basis-confirm-text').textContent=tab==='current'?'These are per-game current stats for the season and window selected above.':'These are per-game projections for the season selected above.';$('import-instruction').innerHTML=tab==='current'?'On Hashtag, select <b>2026–27 Regular Season Rankings</b>, <b>Per-game Average</b>, and <b>Top 300</b>. Save or copy the page source and import it here. JSON, CSV, and copied tables also work.':'<b>DARKO:</b> Choose the Fantasy Lab CSV downloaded from <a href="https://www.darko.app/projections" target="_blank" rel="noreferrer">darko.app ↗</a>. <b>Hashtag:</b> select pure rest-of-season projections, Per-game Average, and Top 300, then import your saved page or JSON. Each source is saved separately; use Projection source to switch baselines.';$('import-season').value=state.season;$('worker-url').value=state.workerUrl;$('worker-period').value=state.workerPeriod;$('worker-season').value=state.season;}
 document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>button.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
 $('sources-open').onclick=()=>openSources();$('method-open').onclick=()=>$('method-dialog').showModal();
@@ -135,9 +172,10 @@ $('min-projected-fpts').addEventListener('input',event=>{
 });
 for(const id of ['search','position','min-games','sort','shooting'])$(id).addEventListener(id==='search'?'input':'change',render);
 function scoringFields(scoring){$('scoring-fields').innerHTML=STAT_DEFS.map(def=>`<label>${def.label} <span>${def.name}</span><input name="${def.key}" type="number" step="any" min="-10000" max="10000" required value="${scoring[def.key]}"></label>`).join('');}
-$('scoring-open').onclick=()=>{scoringFields(state.scoring);$('scoring-dialog').showModal();};
+function openScoring(scoring=state.scoring,message=''){scoringFields(scoring);$('scoring-context').textContent=message||`Weights for ${state.projections?.metadata.source||'your league'}. Both FPTS rows use these weights. Switching projection sources restores that source’s saved scoring.`;$('scoring-dialog').showModal();}
+$('scoring-open').onclick=()=>openScoring();
 $('scoring-reset').onclick=()=>scoringFields(DEFAULT_SCORING);
-$('scoring-form').onsubmit=event=>{event.preventDefault();const data=new FormData(event.target);const scoring=Object.fromEntries(STAT_DEFS.map(def=>[def.key,Number(data.get(def.key))]));if(!Object.values(scoring).every(Number.isFinite))return;state.scoring=scoring;persist();render();$('scoring-dialog').close();toast('League scoring applied. FPTS and rankings updated.');};
+$('scoring-form').onsubmit=event=>{event.preventDefault();const data=new FormData(event.target);const scoring=Object.fromEntries(STAT_DEFS.map(def=>[def.key,Number(data.get(def.key))]));if(!Object.values(scoring).every(Number.isFinite))return;state.scoring=scoring;if(state.projections)state=rememberProjection(state,state.projections);persist();render();$('scoring-dialog').close();toast('League scoring applied. FPTS and rankings updated.');};
 $('import-file').onchange=async event=>{const file=event.target.files[0];if(!file)return;if(file.size>8*1024*1024){$('import-message').textContent='Choose a file smaller than 8 MB.';return;}$('import-text').value=await file.text();$('file-name').textContent=file.name;previewImport();};
 $('import-form').onsubmit=event=>{
   event.preventDefault();
@@ -150,15 +188,17 @@ $('import-form').onsubmit=event=>{
     if(sourceTab==='current'&&metadata.period&&String(metadata.period)!==$('import-period').value)throw new Error(`The file uses period ${metadata.period}; change the selected current stats window to match.`);
     if(state.demo){state.projections=null;state.current=null;state.demo=false;}
     generation++;
-    state[sourceTab]={...imported,metadata:{...metadata,source:metadata.source||'Imported table',season:selectedSeason,basis:'per-game',importedAt:new Date().toISOString(),...(sourceTab==='projections'?{horizon:'rest-of-season',managedSnapshot:false,snapshotId:null}:{period:$('import-period').value})},warnings:imported.warnings.filter(w=>!w.startsWith('Confirm these stats'))};
-    state.season=selectedSeason;if($('page-scoring').checked&&metadata.scoring){for(const def of STAT_DEFS)if(Number.isFinite(metadata.scoring[def.key]))state.scoring[def.key]=metadata.scoring[def.key];}persist();render();
-    $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
+    const dataset={...imported,metadata:{...metadata,source:metadata.source||'Imported table',season:selectedSeason,basis:'per-game',importedAt:new Date().toISOString(),...(sourceTab==='projections'?{horizon:metadata.horizon||'rest-of-season',managedSnapshot:false,snapshotId:null}:{period:$('import-period').value})},warnings:imported.warnings.filter(w=>!w.startsWith('Confirm these stats'))};
+    const importedScoring=$('page-scoring').checked&&metadata.scoring?{...state.scoring,...metadata.scoring}:null;
+    if(sourceTab==='projections')state=rememberProjection(state,dataset,importedScoring);else{state.current=dataset;if(importedScoring)state.scoring=importedScoring;if(state.projections)state=rememberProjection(state,state.projections);}
+    state.season=selectedSeason;persist();render();
+    $('import-message').className='form-message success';$('import-message').textContent=`Imported ${imported.players.length} players.${imported.players.length<=30&&sourceTab==='projections'&&/hashtag/i.test(metadata.source||'')?' Check coverage: Hashtag free access is limited to 30 players.':''}`;
     $('import-text').value='';$('basis-confirm').checked=false;
-    toast(`${imported.players.length} ${sourceTab==='projections'?'ROS projections':'current-stat rows'} imported.`);
+    toast(`${imported.players.length} ${sourceTab==='projections'?`${baselineLabel()} projections`:'current-stat rows'} imported.`);
     if(sourceTab==='projections'&&(!state.current||isLiveStats(state.current)))void refreshCurrentStats();
   }catch(error){$('import-message').className='form-message';$('import-message').textContent=error.message;}
 };
-$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,initialDataCleared:true};persist();statsMessage='';statsError=false;render();$('import-message').textContent='Imported data cleared from this browser.';};
+$('clear-data').onclick=()=>{generation++;state={...state,demo:false,projections:null,current:null,projectionSources:{},sourceScoring:{},initialDataCleared:true};persist();statsMessage='';statsError=false;render();$('import-message').textContent='Imported data cleared from this browser.';};
 
 function renderStatsSync(){
   const current=state.current;
@@ -166,7 +206,7 @@ function renderStatsSync(){
   $('stats-sync').classList.toggle('sync-error',statsError||partial);
   const stamp=current?.metadata.updatedAt||current?.metadata.importedAt;
   const formatted=stamp?new Date(stamp).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
-  $('stats-sync-message').textContent=statsMessage||(!state.projections?'Import ROS projections to connect current NBA stats.':partial?`NBA stats partially loaded: ${current.players.length} players · some updates were unavailable. Use Refresh NBA stats to retry.`:isLiveStats(current)?`NBA stats synced ${formatted} · refresh every 15 minutes while open.`:current?'Using your current-stat import. Refresh NBA stats to switch to ESPN.':'Connecting to current NBA stats…');
+  $('stats-sync-message').textContent=statsMessage||(!state.projections?'Import projections to connect current NBA stats.':partial?`NBA stats partially loaded: ${current.players.length} players · some updates were unavailable. Use Refresh NBA stats to retry.`:isLiveStats(current)?`NBA stats synced ${formatted} · refresh every 15 minutes while open.`:current?'Using your current-stat import. Refresh NBA stats to switch to ESPN.':'Connecting to current NBA stats…');
   $('refresh-stats').disabled=statsBusy||!state.projections;
   $('refresh-stats').textContent=statsBusy?'Fetching NBA stats…':'Refresh NBA stats ↻';
   $('live-period').value=state.workerPeriod;
@@ -182,10 +222,10 @@ function reportStats(message,error=false){
 }
 async function refreshCurrentStats({url=state.workerUrl,season=Number(state.projections?.metadata.season||state.season),period=state.workerPeriod}={}){
   if(statsBusy)return false;
-  if(!state.projections){reportStats('Import your ROS projections first, then fetch current NBA stats.');return false;}
+  if(!state.projections){reportStats('Import your projections first, then fetch current NBA stats.');return false;}
   let base;
   try{const parsedUrl=new URL(url);if(parsedUrl.protocol!=='https:'||parsedUrl.username||parsedUrl.password)throw new Error();base=parsedUrl.origin;}catch{reportStats('Use an HTTPS Worker URL without credentials.',true);return false;}
-  if(!['season','14','8'].includes(period)||String(state.projections.metadata.season)!==String(season)){reportStats('Select the same season as your ROS projections and a supported NBA stats window.',true);return false;}
+  if(!['season','14','8'].includes(period)||String(state.projections.metadata.season)!==String(season)){reportStats('Select the same season as your projections and a supported NBA stats window.',true);return false;}
   const token=++generation,projectionSnapshot=state.projections;
   state.workerUrl=base;state.workerPeriod=period;persist();statsBusy=true;lastStatsAttempt=Date.now();
   reportStats('Matching projections to the NBA roster…');
@@ -253,7 +293,7 @@ document.addEventListener('visibilitychange',maybeRefreshStats);
 setInterval(maybeRefreshStats,LIVE_REFRESH_MS);
 
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-$('export-results').onclick=()=>{if(!currentResults.length){toast('No matched players to export.');return;}const defs=STAT_DEFS;const headers=['Player','Team','Position','Games','Source','Row','FPTS',...defs.map(def=>def.label)];const rows=[headers];for(const player of currentResults){for(const kind of ['current','projection','difference'])rows.push([player.name,player.currentPlayer.team||player.team,player.position,player.games,state.demo?'Fictional demo':'Imported data',kind,kind==='current'?player.currentFpts:kind==='projection'?player.projectionFpts:player.delta,...defs.map(def=>kind==='difference'?player.statDeltas[def.key]:player[kind][def.key])]);}const quote=value=>`"${String(value??'').replace(/"/g,'""')}"`;download(`value-lab-${state.demo?'DEMO-':''}${new Date().toISOString().slice(0,10)}.csv`,rows.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
+$('export-results').onclick=()=>{if(!currentResults.length){toast('No matched players to export.');return;}const defs=[...STAT_DEFS,...PERCENT_DEFS];const headers=['Player','Team','Position','Games','Source','Row','FPTS',...defs.map(def=>def.label)];const rows=[headers];for(const player of currentResults){for(const kind of ['current','projection','difference'])rows.push([player.name,player.currentPlayer.team||player.team,player.position,player.games,state.projections.metadata.source||'Imported data',kind,kind==='current'?player.currentFpts:kind==='projection'?player.projectionFpts:player.delta,...defs.map(def=>kind==='difference'?player.statDeltas[def.key]:statValue(player[kind],def.key))]);}const quote=value=>`"${String(value??'').replace(/"/g,'""')}"`;download(`value-lab-${state.demo?'DEMO-':''}${new Date().toISOString().slice(0,10)}.csv`,rows.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
 await loadInitialData();
 render();
 maybeRefreshStats();

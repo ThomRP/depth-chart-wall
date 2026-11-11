@@ -14,13 +14,27 @@ export const STAT_DEFS = Object.freeze([
   { key: 'fta', label: 'FTA', name: 'Free throws attempted' }
 ]);
 export const DEFAULT_SCORING = Object.freeze({ pts: 1, reb: 1.2, ast: 1.5, stl: 3, blk: 3, tov: -1, fg3m: 0, fgm: 0, fga: 0, ftm: 0, fta: 0, min: 0 });
+export const PERCENT_DEFS = Object.freeze([
+  { key: 'fgPct', label: 'FG%', name: 'Field goal percentage', percentage: true },
+  { key: 'ftPct', label: 'FT%', name: 'Free throw percentage', percentage: true }
+]);
 const statKeys = STAT_DEFS.map(({ key }) => key);
 const numberPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 const missing = value => value == null || /^(?:|[-–—]|n\/a|null|undefined)$/i.test(String(value).trim());
+const teamAbbreviations = new Map([
+  ['Atlanta Hawks','ATL'],['Boston Celtics','BOS'],['Brooklyn Nets','BKN'],['Charlotte Hornets','CHA'],['Chicago Bulls','CHI'],['Cleveland Cavaliers','CLE'],
+  ['Dallas Mavericks','DAL'],['Denver Nuggets','DEN'],['Detroit Pistons','DET'],['Golden State Warriors','GSW'],['Houston Rockets','HOU'],['Indiana Pacers','IND'],
+  ['Los Angeles Clippers','LAC'],['Los Angeles Lakers','LAL'],['Memphis Grizzlies','MEM'],['Miami Heat','MIA'],['Milwaukee Bucks','MIL'],['Minnesota Timberwolves','MIN'],
+  ['New Orleans Pelicans','NOP'],['New York Knicks','NYK'],['Oklahoma City Thunder','OKC'],['Orlando Magic','ORL'],['Philadelphia 76ers','PHI'],['Phoenix Suns','PHX'],
+  ['Portland Trail Blazers','POR'],['Sacramento Kings','SAC'],['San Antonio Spurs','SAS'],['Toronto Raptors','TOR'],['Utah Jazz','UTA'],['Washington Wizards','WAS']
+]);
 // ESPN uses Ronald Holland II; official Pistons game notes use Ron Holland II.
 // https://www.espn.com/nba/team/roster/_/name/det/sort/weight
 // https://cdn.nba.com/teams/uploads/sites/1610612739/2025/01/250127-detcle-notes.pdf
-const playerNameAliases = new Map([['nicolasclaxton','nicclaxton'],['alexandresarr','alexsarr'],['ronholland','ronaldholland']]);
+// DARKO uses Nah'Shon Hyland and Carlton Carrington; documented nicknames:
+// https://www.basketball-reference.com/players/h/hylanbo01.html
+// https://www.nba.com/draft/2024/prospects/carlton-carrington
+const playerNameAliases = new Map([['nicolasclaxton','nicclaxton'],['alexandresarr','alexsarr'],['ronholland','ronaldholland'],['nahshonhyland','boneshyland'],['carltoncarrington','bubcarrington']]);
 
 export function normalizeName(name) {
   const normalized = String(name || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -70,7 +84,8 @@ function rowToPlayer(row, rowNumber, metadata) {
   const field = (...names) => names.map(name => normalized.get(cleanHeader(name))).find(value => !missing(value));
   const name = String(field('name', 'player', 'playername', 'fullname', 'displayname') || '').trim();
   if (!name || !normalizeName(name)) throw new Error(`Row ${rowNumber}: a player name is required.`);
-  const team = String(field('team', 'tm') || '').trim();
+  const sourceTeam = String(field('team', 'tm') || '').trim();
+  const team = teamAbbreviations.get(sourceTeam) || sourceTeam;
   const position = String(field('position', 'pos') || '').trim();
   const stats = Object.fromEntries(statKeys.map(key => [key, null]));
   const inputStats = row.stats && typeof row.stats === 'object' ? row.stats : row;
@@ -92,6 +107,15 @@ function rowToPlayer(row, rowNumber, metadata) {
   }
   if (!statKeys.some(key => stats[key] !== null)) throw new Error(`${name}: no recognized stat columns were found.`);
   const player = { name, team, position, games: numeric(field('games', 'gp', 'g'), `${name} GP`), stats };
+  if (metadata.provider === 'darko') {
+    // Source FP/G has no scoring coefficients in the CSV. Preserve it for
+    // reference/export only; computeFpts always uses the selected league weights.
+    const sourceFpts = field('sourceFpts', 'FP/G');
+    if (!missing(sourceFpts)) {
+      if (!numberPattern.test(String(sourceFpts).trim()) || !Number.isFinite(Number(sourceFpts))) throw new Error(`${name} FP/G is not a valid number.`);
+      player.sourceFpts = Number(sourceFpts);
+    }
+  }
   for (const key of ['id', 'hashtagId', 'espnId', 'idNamespace']) {
     const value = field(key);
     if (!missing(value)) player[key] = String(value).trim();
@@ -147,7 +171,14 @@ export function parseImport(text) {
     for (const key of ['source', 'season', 'period', 'basis', 'updatedAt', 'idNamespace']) {
       if (!Array.isArray(json) && json[key] != null && metadata[key] == null) metadata[key] = json[key];
     }
-  } else rows = parseDelimited(input);
+  } else {
+    rows = parseDelimited(input);
+    const headers = new Set(Object.keys(rows[0] || {}).map(cleanHeader));
+    // The Fantasy Lab export includes this distinctive complete header set.
+    if (['rank','player','team','pos','min','pts','reb','ast','stl','blk','3pm','fg%','ft%','tov','fpg'].every(key => headers.has(key))) {
+      metadata = { source: 'DARKO Fantasy Lab', provider: 'darko', kind: 'projections', basis: 'per-game', horizon: 'daily', sourceUrl: 'https://www.darko.app/projections' };
+    }
+  }
   if (metadata.basis && /total/i.test(String(metadata.basis))) throw new Error('Import per-game averages instead of totals.');
   if (!rows.length) throw new Error('The import contains no player rows.');
   if (rows.length > 3000) throw new Error('Import at most 3,000 player rows at a time.');
@@ -164,7 +195,12 @@ export function parseImport(text) {
   const warnings = [];
   if (!metadata.basis || !/^(?:per[- _]?game(?: averages)?|averages)$/i.test(String(metadata.basis))) warnings.push('Confirm these stats are per-game averages before comparing.');
   const withoutGames = players.filter(player => player.games === null).length;
-  if (withoutGames) warnings.push(`${withoutGames} player${withoutGames === 1 ? ' has' : 's have'} no games-played value; a minimum-games filter cannot include them.`);
+  if (withoutGames && metadata.kind !== 'projections') warnings.push(`${withoutGames} player${withoutGames === 1 ? ' has' : 's have'} no games-played value; a minimum-games filter cannot include them.`);
+  if (metadata.provider === 'darko') warnings.push('DARKO uses daily projected minutes and pace, not a rest-of-season forecast. CSV FP/G is reference only; both comparison rows use your Value Lab scoring.');
+  if (metadata.provider === 'darko') {
+    const omitted = ['fgm','fga','ftm','fta'].filter(key => players.every(p => p.stats[key] == null));
+    if (omitted.length) warnings.push(`DARKO FPTS excludes ${omitted.map(key => key.toUpperCase()).join(', ')} when using available-category scoring; this CSV does not supply these stats.`);
+  }
   return { players, metadata, warnings };
 }
 
@@ -222,14 +258,20 @@ export function computeFpts(stats, scoring = DEFAULT_SCORING) {
   }
   return round(total, 6);
 }
+export function statValue(stats, key) {
+  if (stats?.[key] != null) return stats[key];
+  const pair = key === 'fgPct' ? ['fgm','fga'] : key === 'ftPct' ? ['ftm','fta'] : null;
+  if (!pair || stats?.[pair[0]] == null || !(stats?.[pair[1]] > 0)) return null;
+  return stats[pair[0]] / stats[pair[1]];
+}
 export function comparePlayers(matched, scoring = DEFAULT_SCORING) {
   const players = Array.isArray(matched) ? matched : matched.players;
   return players.map(player => {
     const currentFpts = computeFpts(player.current, scoring), projectionFpts = computeFpts(player.projection, scoring);
     const delta = currentFpts === null || projectionFpts === null ? null : round(currentFpts - projectionFpts, 6);
     const statDeltas = {}, statPerformance = {};
-    for (const { key } of STAT_DEFS) {
-      const actual = player.current?.[key], projection = player.projection?.[key];
+    for (const { key } of [...STAT_DEFS, ...PERCENT_DEFS]) {
+      const actual = statValue(player.current, key), projection = statValue(player.projection, key);
       statDeltas[key] = actual == null || projection == null ? null : round(actual - projection, 6);
       statPerformance[key] = statDeltas[key] === null ? null : Math.sign(statDeltas[key] * (Number(scoring[key]) < 0 ? -1 : 1));
     }
